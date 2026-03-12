@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Link, usePage } from '@inertiajs/react';
+import { useState, useEffect, useRef } from 'react';
+import { usePage } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import SaleReceipt from '@/Components/SaleReceipt';
 import axios from 'axios';
@@ -13,14 +13,16 @@ export default function SalesIndex() {
     const [dailySummary, setDailySummary] = useState(null);
     const [showNewSale, setShowNewSale] = useState(false);
     const [products, setProducts] = useState([]);
-    const [clients, setClients] = useState([]); 
+    const [clients, setClients] = useState([]);
     const [saleItems, setSaleItems] = useState([]);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [quantity, setQuantity] = useState(1);
     const [saving, setSaving] = useState(false);
-    const [selectedClientId, setSelectedClientId] = useState('');
-    const [isCounterSale, setIsCounterSale] = useState(false);
-    const [counterClientName, setCounterClientName] = useState('');
+    
+    const [clientInput, setClientInput] = useState('');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [filteredClients, setFilteredClients] = useState([]);
+    const inputRef = useRef(null);
 
     useEffect(() => {
         fetchSales();
@@ -67,12 +69,43 @@ export default function SalesIndex() {
 
     const openNewSale = () => {
         setSaleItems([]);
-        setSelectedClientId('');
-        setIsCounterSale(false);
-        setCounterClientName('');
+        setClientInput('');
+        setFilteredClients([]);
+        setShowSuggestions(false);
         fetchProducts();
         fetchClients();
         setShowNewSale(true);
+    };
+
+    const handleClientInputChange = (e) => {
+        const value = e.target.value;
+        setClientInput(value);
+        
+        if (value.trim().length > 0) {
+            const filtered = clients.filter(client =>
+                client.name.toLowerCase().includes(value.toLowerCase())
+            );
+            setFilteredClients(filtered);
+            setShowSuggestions(filtered.length > 0);
+        } else {
+            setFilteredClients([]);
+            setShowSuggestions(false);
+        }
+    };
+
+    const handleSelectClient = (client) => {
+        setClientInput(client.name);
+        setFilteredClients([]);
+        setShowSuggestions(false);
+    };
+
+    const handleClearClient = () => {
+        setClientInput('');
+        setFilteredClients([]);
+        setShowSuggestions(false);
+        if (inputRef.current) {
+            inputRef.current.focus();
+        }
     };
 
     const addItem = () => {
@@ -108,18 +141,6 @@ export default function SalesIndex() {
         return saleItems.reduce((sum, item) => sum + item.subtotal, 0);
     };
 
-    const handleClientChange = (e) => {
-        const value = e.target.value;
-        setSelectedClientId(value);
-        
-        if (value === 'counter') {
-            setIsCounterSale(true);
-        } else {
-            setIsCounterSale(false);
-            setCounterClientName('');
-        }
-    };
-
     const handleSale = async () => {
         if (saleItems.length === 0) return;
         
@@ -132,22 +153,21 @@ export default function SalesIndex() {
                 }))
             };
             
-            // Handle client selection
-            if (isCounterSale) {
-                // For counter sales, use client_name
-                saleData.client_name = counterClientName.trim() || 'Client Comptoir';
-            } else if (selectedClientId) {
-                // For existing client
-                saleData.client_id = parseInt(selectedClientId);
+            const matchedClient = clients.find(
+                c => c.name.toLowerCase() === clientInput.trim().toLowerCase()
+            );
+            
+            if (matchedClient) {
+                saleData.client_id = matchedClient.id;
+            } else if (clientInput.trim()) {
+                saleData.client_name = clientInput.trim();
             }
             
             const response = await axios.post('/api/sales', saleData);
             
             setShowNewSale(false);
             setSaleItems([]);
-            setSelectedClientId('');
-            setIsCounterSale(false);
-            setCounterClientName('');
+            setClientInput('');
             fetchSales();
             fetchDailySummary();
             setSelectedSale(response.data.data);
@@ -172,7 +192,6 @@ export default function SalesIndex() {
         <AuthenticatedLayout>
             <div className="py-6">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
-                    {/* Header */}
                     <div className="flex justify-between items-center mb-6">
                         <h1 className="text-2xl font-bold text-gray-900">Gestion des Ventes</h1>
                         <button
@@ -186,7 +205,6 @@ export default function SalesIndex() {
                         </button>
                     </div>
 
-                    {/* Daily Summary Cards */}
                     {dailySummary && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                             <div className="bg-white overflow-hidden shadow-lg rounded-lg p-6 border-l-4 border-red-600">
@@ -207,7 +225,6 @@ export default function SalesIndex() {
                         </div>
                     )}
 
-                    {/* Sales Table */}
                     <div className="bg-white overflow-hidden shadow-lg rounded-lg">
                         <div className="p-6">
                             <h2 className="text-lg font-semibold text-gray-900 mb-4">Historique des ventes</h2>
@@ -234,7 +251,7 @@ export default function SalesIndex() {
                                                 <tr key={sale.id} className="hover:bg-gray-50">
                                                     <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{sale.receipt_number}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">{formatDate(sale.sale_date)}</td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-gray-500">{sale.client?.name || 'Vente comptoir'}</td>
+<td className="px-6 py-4 whitespace-nowrap text-gray-500">{sale.client?.name || '-'}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap text-gray-500">{sale.user?.name}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap font-bold text-green-600">{formatCurrency(sale.total_amount)}</td>
                                                     <td className="px-6 py-4 whitespace-nowrap">
@@ -259,7 +276,6 @@ export default function SalesIndex() {
                 </div>
             </div>
 
-            {/* New Sale Modal */}
             {showNewSale && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowNewSale(false)}></div>
@@ -274,44 +290,58 @@ export default function SalesIndex() {
                         </div>
                         
                         <div className="flex-1 overflow-y-auto p-6">
-                            {/* Client Selection */}
-                            <div className="mb-4">
+                            <div className="mb-4 relative">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Client</label>
-                                <select
-                                    value={selectedClientId}
-                                    onChange={handleClientChange}
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2"
-                                >
-                                    <option value="">Sélectionner un client (optionnel)</option>
-                                    <option value="counter">🏪 Vente comptoir</option>
-                                    {clients.map(client => (
-                                        <option key={client.id} value={client.id}>
-                                            {client.name}
-                                        </option>
-                                    ))}
-                                </select>
+                                <div className="relative">
+                                    <input
+                                        ref={inputRef}
+                                        type="text"
+                                        value={clientInput}
+                                        onChange={handleClientInputChange}
+                                        onFocus={() => clientInput && filteredClients.length > 0 && setShowSuggestions(true)}
+                                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                        placeholder="Tapez un nom de client existant ou nouveau..."
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2 pr-10 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                    />
+                                    {clientInput && (
+                                        <button
+                                            type="button"
+                                            onClick={handleClearClient}
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    )}
+                                </div>
+                                
+                                {showSuggestions && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                        {filteredClients.map((client) => (
+                                            <button
+                                                key={client.id}
+                                                type="button"
+                                                onClick={() => handleSelectClient(client)}
+                                                className="w-full px-4 py-2 text-left hover:bg-red-50 flex items-center justify-between"
+                                            >
+                                                <span className="font-medium text-gray-900">{client.name}</span>
+                                                <span className="text-xs text-green-600">Client existant</span>
+                                            </button>
+                                        ))}
+                                        {filteredClients.length === 0 && clientInput && (
+                                            <div className="px-4 py-2 text-sm text-blue-600">
+                                                Nouveau client : "{clientInput}"
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                
+                                <p className="text-xs text-gray-500 mt-1">
+                                    💡 Tapez un nom : si le client existe, il sera sélectionné automatiquement. Sinon, un nouveau client sera créé.
+                                </p>
                             </div>
 
-                            {/* Counter Sale Name Input */}
-                            {isCounterSale && (
-                                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                                    <label className="block text-sm font-medium text-blue-700 mb-1">
-                                        Nom du client (laisser vide pour "Client Comptoir")
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={counterClientName}
-                                        onChange={(e) => setCounterClientName(e.target.value)}
-                                        placeholder="Ex: Jean Marché Central"
-                                        className="w-full border border-blue-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                    />
-                                    <p className="text-xs text-blue-600 mt-1">
-                                        Par défaut: "Client Comptoir"
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Add Product */}
                             <div className="grid grid-cols-3 gap-4 mb-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Produit</label>
@@ -352,7 +382,6 @@ export default function SalesIndex() {
                                 </div>
                             </div>
 
-                            {/* Sale Items */}
                             {saleItems.length > 0 && (
                                 <div className="mb-4">
                                     <h3 className="font-semibold text-gray-900 mb-2">Articles</h3>
@@ -415,7 +444,6 @@ export default function SalesIndex() {
                 </div>
             )}
 
-            {/* Receipt Modal */}
             {showReceipt && selectedSale && (
                 <SaleReceipt
                     sale={selectedSale}

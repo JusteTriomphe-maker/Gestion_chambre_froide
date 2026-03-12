@@ -47,7 +47,7 @@ export default function SaleReceipt({ sale, isOpen, onClose }) {
     };
 
     const cashierName = sale.user?.name || 'Caissier';
-    const clientName = sale.client?.name || 'Vente comptoir';
+    const clientName = sale.client?.name || '-';
     const items = sale.items || [];
 
     return (
@@ -74,8 +74,8 @@ export default function SaleReceipt({ sale, isOpen, onClose }) {
                 <div ref={receiptRef} className="flex-1 overflow-y-auto p-4 bg-white text-sm">
                     {/* Company Header */}
                     <div className="text-center border-b-2 border-dashed border-red-300 pb-3 mb-3">
-                        <h2 className="text-lg font-bold text-red-900">BOUCHERIE LA FRAÎCHEUR</h2>
-                        <p className="text-xs text-red-700">Adresse : Marché Total, Tchilou, Congo</p>
+                        <h2 className="text-lg font-bold text-red-900">CHAMBRE FROIDE MA EMMA</h2>
+                        <p className="text-xs text-red-700">Adresse : Marché Total, Congo-Brazzaville</p>
                         <p className="text-xs text-red-700">Tél : +242 06 000 00 00</p>
                     </div>
 

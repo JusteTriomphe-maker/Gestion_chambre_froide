@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ModernLayout from '@/Layouts/ModernLayout';
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
@@ -75,7 +75,7 @@ function SaleDetailModal({ sale, isOpen, onClose }) {
                         </div>
                         <div className="bg-slate-50 rounded-lg p-4">
                             <p className="text-sm text-slate-500">Client</p>
-                            <p className="font-semibold text-slate-900">{sale.client?.name || 'Vente comptoir'}</p>
+                            <p className="font-semibold text-slate-900">{sale.client?.name || '-'}</p>
                         </div>
                         <div className="bg-slate-50 rounded-lg p-4">
                             <p className="text-sm text-slate-500">Caissier</p>
@@ -165,16 +165,57 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [quantity, setQuantity] = useState(1);
     const [selectedClient, setSelectedClient] = useState(null);
+    const [clientInput, setClientInput] = useState('');
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [filteredClients, setFilteredClients] = useState([]);
     const [isPaid, setIsPaid] = useState(true);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const inputRef = useRef(null);
 
     useEffect(() => {
         if (isOpen) {
             fetchProducts();
             fetchClients();
+            // Reset form when opening
+            setClientInput('');
+            setFilteredClients([]);
+            setShowSuggestions(false);
         }
     }, [isOpen]);
+
+    const handleClientInputChange = (e) => {
+        const value = e.target.value;
+        setClientInput(value);
+        
+        if (value.trim().length > 0) {
+            const filtered = clients.filter(client =>
+                client.name.toLowerCase().includes(value.toLowerCase())
+            );
+            setFilteredClients(filtered);
+            setShowSuggestions(filtered.length > 0);
+        } else {
+            setFilteredClients([]);
+            setShowSuggestions(false);
+        }
+    };
+
+    const handleSelectClient = (client) => {
+        setClientInput(client.name);
+        setSelectedClient(client);
+        setFilteredClients([]);
+        setShowSuggestions(false);
+    };
+
+    const handleClearClient = () => {
+        setClientInput('');
+        setSelectedClient(null);
+        setFilteredClients([]);
+        setShowSuggestions(false);
+        if (inputRef.current) {
+            inputRef.current.focus();
+        }
+    };
 
     const fetchProducts = async () => {
         try {
@@ -234,15 +275,27 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
         setError(null);
         
         try {
-            const response = await axios.post('/api/sales', {
-                client_id: selectedClient?.id || null,
+            // Check if client exists or create new one
+            const matchedClient = clients.find(
+                c => c.name.toLowerCase() === clientInput.trim().toLowerCase()
+            );
+            
+            const saleData = {
                 items: saleItems.map(item => ({
                     product_id: item.product_id,
                     quantity: item.quantity,
                     unit_price: item.unit_price
                 })),
                 is_paid: isPaid
-            });
+            };
+            
+            if (matchedClient) {
+                saleData.client_id = matchedClient.id;
+            } else if (clientInput.trim()) {
+                saleData.client_name = clientInput.trim();
+            }
+            
+            const response = await axios.post('/api/sales', saleData);
             
             onSuccess(response.data.data);
             onClose();
@@ -258,6 +311,9 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
         setSaleItems([]);
         setSelectedProduct(null);
         setSelectedClient(null);
+        setClientInput('');
+        setFilteredClients([]);
+        setShowSuggestions(false);
         setQuantity(1);
         setIsPaid(true);
         setError(null);
@@ -294,22 +350,57 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
                         </div>
                     )}
 
-                    {/* Client Selection */}
-                    <div className="mb-4">
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Client (optionnel)</label>
-                        <select
-                            value={selectedClient?.id || ''}
-                            onChange={(e) => {
-                                const client = clients.find(c => c.id === parseInt(e.target.value));
-                                setSelectedClient(client || null);
-                            }}
-                            className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                        >
-                            <option value="">Vente comptoir</option>
-                            {clients.map(client => (
-                                <option key={client.id} value={client.id}>{client.name}</option>
-                            ))}
-                        </select>
+{/* Client Selection */}
+                    <div className="mb-4 relative">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Client</label>
+                        <div className="relative">
+                            <input
+                                ref={inputRef}
+                                type="text"
+                                value={clientInput}
+                                onChange={handleClientInputChange}
+                                onFocus={() => clientInput && filteredClients.length > 0 && setShowSuggestions(true)}
+                                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                                placeholder="Tapez un nom de client existant ou nouveau..."
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 pr-10 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            />
+                            {clientInput && (
+                                <button
+                                    type="button"
+                                    onClick={handleClearClient}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                                >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+                        
+                        {showSuggestions && (
+                            <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                {filteredClients.map((client) => (
+                                    <button
+                                        key={client.id}
+                                        type="button"
+                                        onClick={() => handleSelectClient(client)}
+                                        className="w-full px-4 py-2 text-left hover:bg-indigo-50 flex items-center justify-between"
+                                    >
+                                        <span className="font-medium text-slate-900">{client.name}</span>
+                                        <span className="text-xs text-green-600">Client existant</span>
+                                    </button>
+                                ))}
+                                {filteredClients.length === 0 && clientInput && (
+                                    <div className="px-4 py-2 text-sm text-blue-600">
+                                        Nouveau client : "{clientInput}"
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
+                        <p className="text-xs text-slate-500 mt-1">
+                            💡 Tapez un nom : si le client existe, il sera sélectionné automatiquement. Sinon, un nouveau client sera créé.
+                        </p>
                     </div>
 
                     {/* Payment Status */}
@@ -690,7 +781,7 @@ export default function StockExitsIndex() {
                                             {formatDate(sale.sale_date)}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-slate-600">
-                                            {sale.client?.name || 'Vente comptoir'}
+                                            {sale.client?.name || '-'}
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 font-medium text-sm">
