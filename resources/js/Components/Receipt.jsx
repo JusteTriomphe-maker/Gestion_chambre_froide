@@ -17,11 +17,7 @@ export default function Receipt({ exit, isOpen, onClose }) {
     if (!isOpen || !exit) return null;
 
     const formatCurrency = (value) => {
-        return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
-            maximumFractionDigits: 0,
-        }).format(value || 0);
+        return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value || 0) + ' FCFA';
     };
 
     const formatDate = (date) => {

@@ -1,3 +1,14 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Évite le zoom automatique sur les champs iOS (< 16px) */
+@layer base {
+    @media (max-width: 639px) {
+        input:not([type='checkbox']):not([type='radio']):not([type='hidden']),
+        select,
+        textarea {
+            font-size: 16px;
+        }
+    }
+}

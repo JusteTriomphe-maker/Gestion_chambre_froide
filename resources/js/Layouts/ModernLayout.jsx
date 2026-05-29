@@ -18,15 +18,18 @@ export default function ModernLayout({ children, title }) {
             { name: 'Fournisseurs', href: '/suppliers', icon: 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4', module: 'suppliers' },
             { name: 'Entrées Stock', href: '/stock-entries', icon: 'M12 4v16m8-8H4', module: 'stock-entries' },
             { name: 'Sorties Stock', href: '/stock-exits', icon: 'M12 4v16m8-8H4', module: 'stock-exits' },
+            { name: 'Ventes', href: '/sales', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', module: 'sales' },
             { name: 'Dettes', href: '/debts', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z', module: 'debts' },
             { name: 'Chiffre d\'Affaires', href: '/chiffre-affaires', icon: 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6', module: 'revenue' },
             { name: 'Utilisateurs', href: '/users', icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z', module: 'users' },
         ];
+        // IMPORTANT : aligné sur les permissions backend (RoleAccessMiddleware)
+        // Objectif : ne jamais afficher un lien qui déclenche "Accès refusé".
         const permissions = {
-            'dg': ['dashboard', 'products', 'clients', 'suppliers', 'stock-entries', 'stock-exits', 'debts', 'revenue', 'users'],
-            'gerant': ['dashboard', 'products', 'clients', 'suppliers', 'stock-entries', 'stock-exits', 'debts', 'revenue', 'users'],
-            'caissier': ['stock-exits', 'clients', 'revenue'],
-            'comptable': ['dashboard', 'debts', 'revenue'],
+            dg: ['dashboard', 'products', 'clients', 'suppliers', 'stock-entries', 'stock-exits', 'debts', 'users', 'revenue', 'sales'],
+            gerant: ['dashboard', 'products', 'stock-entries', 'stock-exits', 'sales'],
+            caissier: ['dashboard', 'clients', 'stock-exits', 'sales'],
+            comptable: ['dashboard', 'debts', 'revenue'],
         };
         const allowed = permissions[role] || [];
         return allNav.filter(item => allowed.includes(item.module));
@@ -151,19 +154,20 @@ export default function ModernLayout({ children, title }) {
 
             <div className="flex-1 lg:pl-64">
                 <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-slate-200 bg-white/80 backdrop-blur-md px-4 shadow-sm sm:px-6 lg:px-8">
-                    <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-4">
                         <button
                             onClick={() => setMobileMenuOpen(true)}
-                            className="p-2 text-slate-500 hover:text-slate-700 lg:hidden"
+                            className="flex-shrink-0 p-2 text-slate-500 hover:text-slate-700 lg:hidden"
+                            aria-label="Ouvrir le menu"
                         >
                             <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                             </svg>
                         </button>
-                        <h1 className="text-xl font-semibold text-slate-900">{title || 'Dashboard'}</h1>
+                        <h1 className="truncate text-lg font-semibold text-slate-900 sm:text-xl">{title || 'Dashboard'}</h1>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex flex-shrink-0 items-center gap-2 sm:gap-4">
                         <div className="relative">
                             <button className="flex items-center gap-2 rounded-full bg-slate-100 p-2 hover:bg-slate-200 transition">
                                 <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-semibold">

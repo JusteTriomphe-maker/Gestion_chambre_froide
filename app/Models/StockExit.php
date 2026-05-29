@@ -19,6 +19,9 @@ class StockExit extends Model
         'product_id',
         'client_id',
         'user_id',
+        'input_unit',
+        'input_quantity',
+        'conversion_rate',
         'quantity',
         'exit_date',
         'reason',
@@ -33,6 +36,8 @@ class StockExit extends Model
      * @var array<string, string>
      */
     protected $casts = [
+        'input_quantity' => 'decimal:2',
+        'conversion_rate' => 'decimal:4',
         'quantity' => 'decimal:2',
         'exit_date' => 'date',
         'unit_price' => 'decimal:2',

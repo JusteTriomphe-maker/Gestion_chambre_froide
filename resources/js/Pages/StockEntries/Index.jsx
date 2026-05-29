@@ -12,6 +12,8 @@ export default function StockEntriesIndex() {
     const [formData, setFormData] = useState({
         product_id: '',
         supplier_id: '',
+        input_unit: 'kg',
+        input_quantity: '',
         quantity: '',
         unit_price: '',
         entry_date: new Date().toISOString().split('T')[0],
@@ -62,7 +64,14 @@ export default function StockEntriesIndex() {
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            const response = await axios.post('/api/stock-entries', formData);
+            const quantityForCompat = formData.input_quantity || formData.quantity;
+            const payload = {
+                ...formData,
+                input_quantity: quantityForCompat,
+                quantity: quantityForCompat,
+            };
+
+            const response = await axios.post('/api/stock-entries', payload);
 
             if (response.status === 200 || response.status === 201) {
                 setShowModal(false);
@@ -88,6 +97,8 @@ export default function StockEntriesIndex() {
         setFormData({
             product_id: '',
             supplier_id: '',
+            input_unit: 'kg',
+            input_quantity: '',
             quantity: '',
             unit_price: '',
             entry_date: new Date().toISOString().split('T')[0],
@@ -99,7 +110,7 @@ export default function StockEntriesIndex() {
     };
 
     const formatCurrency = (value) => {
-        return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'XOF' }).format(value || 0);
+        return new Intl.NumberFormat('fr-FR').format(value || 0) + ' FCFA';
     };
 
     const formatDate = (date) => {
@@ -161,7 +172,12 @@ export default function StockEntriesIndex() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{entry.supplier?.name || '-'}</td>
-                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-900">{entry.quantity}</td>
+                                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-900">
+                                            <div className="flex flex-col">
+                                                <span>{entry.input_quantity ?? entry.quantity} {entry.input_unit ?? 'kg'}</span>
+                                                <span className="text-xs text-slate-500">→ {entry.quantity} kg</span>
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">{formatCurrency(entry.unit_price)}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{formatDate(entry.expiration_date)}</td>
                                         <td className="px-6 py-4 whitespace-nowrap">
@@ -185,13 +201,13 @@ export default function StockEntriesIndex() {
             </div>
 
             {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
                     <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowModal(false)}></div>
-                    <div className="relative w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-                        <div className="px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 flex-shrink-0">
+                    <div className="relative w-full max-w-lg max-h-[92vh] sm:max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 bg-gradient-to-r from-green-500 to-green-600 flex-shrink-0">
                             <h3 className="text-lg font-semibold text-white">Nouvelle Entrée de Stock</h3>
                         </div>
-                        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto">
+                        <form onSubmit={handleSubmit} className="p-4 sm:p-6 overflow-y-auto">
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Produit</label>
@@ -207,17 +223,41 @@ export default function StockEntriesIndex() {
                                         {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                     </select>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Unité</label>
+                                        <select
+                                            value={formData.input_unit}
+                                            onChange={(e) => setFormData({ ...formData, input_unit: e.target.value })}
+                                            className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500"
+                                        >
+                                            <option value="kg">Kg</option>
+                                            <option value="carton">Carton</option>
+                                        </select>
+                                    </div>
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Quantité</label>
-                                        <input type="number" required value={formData.quantity} onChange={(e) => setFormData({ ...formData, quantity: e.target.value })} className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500" />
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            required
+                                            value={formData.input_quantity}
+                                            onChange={(e) => setFormData({ ...formData, input_quantity: e.target.value, quantity: e.target.value })}
+                                            className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="hidden">
+                                        {/* Champ compat API (kg). Renseigné automatiquement à partir de input_quantity. */}
+                                        <input type="hidden" value={formData.quantity} readOnly />
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Prix Unitaire</label>
                                         <input type="number" step="0.01" required value={formData.unit_price} onChange={(e) => setFormData({ ...formData, unit_price: e.target.value })} className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500" />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Date d'entrée</label>
                                         <input type="date" required value={formData.entry_date} onChange={(e) => setFormData({ ...formData, entry_date: e.target.value })} className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500" />
@@ -242,9 +282,9 @@ export default function StockEntriesIndex() {
                                     <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} rows="3" className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-green-500" />
                                 </div>
                             </div>
-                            <div className="mt-6 flex justify-end gap-3">
-                                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium">Annuler</button>
-                                <button type="submit" className="px-4 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-xl hover:from-green-600 hover:to-green-700">Créer</button>
+                            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
+                                <button type="button" onClick={() => setShowModal(false)} className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium">Annuler</button>
+                                <button type="submit" className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white font-medium rounded-xl hover:from-green-600 hover:to-green-700">Créer</button>
                             </div>
                         </form>
                     </div>

@@ -129,7 +129,9 @@ export default function SaleReceipt({ sale, isOpen, onClose }) {
                                             <div className="text-xs text-red-600">{item.product.unit}</div>
                                         )}
                                     </td>
-                                    <td className="py-1 text-right text-red-900">{item.quantity}</td>
+                                    <td className="py-1 text-right text-red-900">
+                                        {item.input_quantity ?? item.quantity} {item.input_unit ?? 'kg'}
+                                    </td>
                                     <td className="py-1 text-right text-red-900">{formatCurrency(item.unit_price)}</td>
                                     <td className="py-1 text-right text-red-900 font-medium">{formatCurrency(item.subtotal)}</td>
                                 </tr>

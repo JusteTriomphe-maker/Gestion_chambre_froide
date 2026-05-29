@@ -69,10 +69,20 @@ class ProductController extends Controller
             'category' => 'nullable|string|max:255',
             'price_buying' => 'required|numeric|min:0',
             'price_selling' => 'required|numeric|min:0',
+            'price_per_carton' => 'nullable|numeric|min:0',
             'unit' => 'required|string|max:50',
+            'stock_mode' => 'nullable|in:kg_only,carton_only,kg_and_carton',
+            'kg_per_carton' => 'nullable|numeric|min:0.01',
             'min_threshold' => 'nullable|numeric|min:0',
             'current_stock' => 'nullable|numeric|min:0',
         ]);
+
+        // Defaults/normalisation
+        $validated['stock_mode'] = $validated['stock_mode'] ?? 'kg_only';
+        if ($validated['stock_mode'] === 'kg_only') {
+            $validated['kg_per_carton'] = null;
+            $validated['price_per_carton'] = null;
+        }
 
         $product = Product::create($validated);
 
@@ -116,10 +126,18 @@ class ProductController extends Controller
             'category' => 'nullable|string|max:255',
             'price_buying' => 'sometimes|numeric|min:0',
             'price_selling' => 'sometimes|numeric|min:0',
+            'price_per_carton' => 'nullable|numeric|min:0',
             'unit' => 'sometimes|string|max:50',
+            'stock_mode' => 'nullable|in:kg_only,carton_only,kg_and_carton',
+            'kg_per_carton' => 'nullable|numeric|min:0.01',
             'min_threshold' => 'nullable|numeric|min:0',
             'current_stock' => 'nullable|numeric|min:0',
         ]);
+
+        if (isset($validated['stock_mode']) && $validated['stock_mode'] === 'kg_only') {
+            $validated['kg_per_carton'] = null;
+            $validated['price_per_carton'] = null;
+        }
 
         $product->update($validated);
 

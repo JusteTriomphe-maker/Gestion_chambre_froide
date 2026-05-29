@@ -11,9 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('stock_exits', function (Blueprint $table) {
-            $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
-        });
+        // Protéger contre les erreurs si la colonne existe déjà (base déjà partiellement migrée)
+        if (!Schema::hasColumn('stock_exits', 'user_id')) {
+            Schema::table('stock_exits', function (Blueprint $table) {
+                $table->foreignId('user_id')->nullable()->constrained('users')->onDelete('set null');
+            });
+        }
     }
 
     /**
@@ -21,9 +24,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('stock_exits', function (Blueprint $table) {
-            $table->dropForeign(['user_id']);
-            $table->dropColumn('user_id');
-        });
+        if (Schema::hasColumn('stock_exits', 'user_id')) {
+            Schema::table('stock_exits', function (Blueprint $table) {
+                $table->dropForeign(['user_id']);
+                $table->dropColumn('user_id');
+            });
+        }
     }
 };

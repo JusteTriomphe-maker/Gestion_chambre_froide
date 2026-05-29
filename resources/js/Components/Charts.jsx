@@ -92,7 +92,7 @@ export function ProductCategoryChart({ categories, counts }) {
         maintainAspectRatio: false,
         plugins: {
             legend: {
-                position: 'right',
+                position: 'bottom',
             },
             title: {
                 display: true,

@@ -89,11 +89,7 @@ export default function RevenueIndex() {
 
     const formatCurrency = (value) => {
         const num = Number(value) || 0;
-        return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
-            maximumFractionDigits: 0,
-        }).format(num);
+        return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(num) + ' FCFA';
     };
 
     const formatDate = (dateString) => {
@@ -126,13 +122,25 @@ export default function RevenueIndex() {
         }).format(date);
     };
 
+    /** Montant ligne : subtotal en base (correct kg/carton), pas quantity×prix. */
+    const lineAmount = (row) => {
+        if (row.subtotal != null && row.subtotal !== '') {
+            return Number(row.subtotal);
+        }
+        const qty = row.input_quantity ?? row.quantity;
+        return (Number(qty) || 0) * (Number(row.unit_price) || 0);
+    };
+
+    const formatLineQuantity = (row) => {
+        if (row.input_quantity != null && row.input_unit) {
+            return `${row.input_quantity} ${row.input_unit}`;
+        }
+        return `${Number(row.quantity || 0).toFixed(2)} kg`;
+    };
+
     const calculateTotal = (items) => {
         if (!Array.isArray(items)) return 0;
-        return items.reduce((sum, item) => {
-            const qty = Number(item.quantity) || 0;
-            const price = Number(item.unit_price) || 0;
-            return sum + (qty * price);
-        }, 0);
+        return items.reduce((sum, item) => sum + lineAmount(item), 0);
     };
 
     const getSelectedDateTotal = () => {
@@ -339,13 +347,16 @@ export default function RevenueIndex() {
                                                     </div>
                                                 </td>
                                                 <td className="py-4 px-6 text-right text-sm text-slate-900 font-medium">
-                                                    {Number(sale.quantity).toFixed(2)} {sale.product?.unit || 'unité(s)'}
+                                                    {formatLineQuantity(sale)}
                                                 </td>
                                                 <td className="py-4 px-6 text-right text-sm text-slate-600">
                                                     {formatCurrency(sale.unit_price)}
+                                                    {sale.input_unit && (
+                                                        <span className="block text-xs text-slate-400">/ {sale.input_unit}</span>
+                                                    )}
                                                 </td>
                                                 <td className="py-4 px-6 text-right text-sm font-semibold text-indigo-600">
-                                                    {formatCurrency(sale.subtotal)}
+                                                    {formatCurrency(lineAmount(sale))}
                                                 </td>
                                                 <td className="py-4 px-6 text-center">
                                                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">

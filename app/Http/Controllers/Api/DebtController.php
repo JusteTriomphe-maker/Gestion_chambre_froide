@@ -9,6 +9,7 @@ use App\Models\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Middleware\RoleMiddleware;
+use App\Support\NotifyDG;
 
 class DebtController extends Controller
 {
@@ -101,6 +102,15 @@ class DebtController extends Controller
         }
 
         $debt->load(['client', 'supplier']);
+
+        NotifyDG::send('Nouvelle dette enregistrée', [
+            "Type : {$debt->type}",
+            "Montant : " . number_format((float) $debt->amount, 0, ',', ' ') . " FCFA",
+            "Client : " . ($debt->client?->name ?? '-'),
+            "Fournisseur : " . ($debt->supplier?->name ?? '-'),
+            "Date : {$debt->date?->format('Y-m-d')}",
+            "Référence : {$debt->reference}",
+        ]);
 
         return response()->json([
             'message' => 'Debt created successfully',

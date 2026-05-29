@@ -68,7 +68,7 @@ class PermissionController extends Controller
                 'value' => $role,
                 'label' => RoleMiddleware::getRoleLabel($role),
                 'color' => RoleMiddleware::getRoleColor($role),
-                'permissions' => RoleMiddleware::PERMISSIONS[$role] ?? [],
+                'permissions' => RoleMiddleware::getPermissionsForRole($role),
             ];
         }
 
@@ -89,7 +89,9 @@ class PermissionController extends Controller
                 'roles' => RoleMiddleware::getAllRoles(),
                 'modules' => array_keys(RoleMiddleware::MODULES),
                 'actions' => array_keys(RoleMiddleware::ACTIONS),
-                'permissions' => RoleMiddleware::PERMISSIONS,
+                'permissions' => collect(RoleMiddleware::getAllRoles())
+                    ->mapWithKeys(fn ($role) => [$role => RoleMiddleware::getPermissionsForRole($role)])
+                    ->all(),
             ],
         ]);
     }

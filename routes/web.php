@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\Api\SaleController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -58,6 +59,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/sales', function () {
         return Inertia::render('Sales/Index');
     })->name('sales')->middleware(\App\Http\Middleware\RoleAccessMiddleware::class.':sales');
+
+    // Rapport PDF des ventes du jour - Accès: DG, Gérant (contrôle dans le contrôleur)
+    Route::get('/sales/daily-report', [SaleController::class, 'generateDailyReport'])
+        ->name('sales.daily-report');
 
     // Chiffre d'Affaires / Revenue - Accès: DG, Comptable
     Route::get('/chiffre-affaires', function () {

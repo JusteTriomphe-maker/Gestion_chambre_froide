@@ -176,9 +176,7 @@ class DashboardController extends Controller
             ->with('items')
             ->get()
             ->sum(function ($sale) {
-                return $sale->items->sum(function ($item) {
-                    return $item->quantity * $item->unit_price;
-                });
+                return $sale->items->sum(fn ($item) => (float) $item->subtotal);
             });
 
         return response()->json([
@@ -190,7 +188,7 @@ class DashboardController extends Controller
     /**
      * Get revenue history grouped by date.
      * Only includes PAID sales.
-     * Calcul: SUM(sale_items.quantity * sale_items.unit_price) grouped by DATE(sales.sale_date)
+     * Calcul: SUM(sale_items.subtotal) grouped by DATE(sales.sale_date)
      */
     public function revenueHistory(Request $request)
     {
@@ -216,14 +214,12 @@ class DashboardController extends Controller
         // Get all paid sales with their items
         $sales = $salesQuery->with(['items.product'])->get();
 
-        // Group by date and calculate total from sale_items (quantity * unit_price)
+        // Group by date and sum line subtotals (kg/carton-safe)
         $history = $sales->groupBy(function ($sale) {
             return $sale->sale_date->format('Y-m-d');
         })->map(function ($daySales, $date) {
             $total = $daySales->sum(function ($sale) {
-                return $sale->items->sum(function ($item) {
-                    return floatval($item->quantity) * floatval($item->unit_price);
-                });
+                return $sale->items->sum(fn ($item) => (float) $item->subtotal);
             });
             
             return [
@@ -253,7 +249,7 @@ class DashboardController extends Controller
         // Get revenue by category from PAID sales only
         $revenueByCategory = SaleItem::select(
             'products.category',
-            DB::raw('SUM(sale_items.quantity * sale_items.unit_price) as total_revenue'),
+            DB::raw('SUM(sale_items.subtotal) as total_revenue'),
             DB::raw('SUM(sale_items.quantity) as total_quantity'),
             DB::raw('COUNT(DISTINCT sale_items.sale_id) as transaction_count')
         )
@@ -294,7 +290,7 @@ class DashboardController extends Controller
         // Get PAID sales with items and related data
         $query = Sale::where('is_paid', true)
             ->with(['items.product:id,name,category', 'client:id,name', 'user:id,name'])
-            ->withSum('items', DB::raw('quantity * unit_price'));
+            ->withSum('items', 'subtotal');
 
         // Filter by category if provided
         if ($category && $category !== 'all') {
@@ -358,8 +354,10 @@ class DashboardController extends Controller
                         'unit' => $item->product->unit,
                     ] : null,
                     'quantity' => floatval($item->quantity),
+                    'input_unit' => $item->input_unit ?? 'kg',
+                    'input_quantity' => floatval($item->input_quantity ?? $item->quantity),
                     'unit_price' => floatval($item->unit_price),
-                    'subtotal' => floatval($item->quantity) * floatval($item->unit_price),
+                    'subtotal' => floatval($item->subtotal),
                     'client' => $sale->client ? [
                         'id' => $sale->client->id,
                         'name' => $sale->client->name,

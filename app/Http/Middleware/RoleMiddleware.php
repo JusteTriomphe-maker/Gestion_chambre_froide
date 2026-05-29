@@ -387,6 +387,19 @@ class RoleMiddleware
         return $user->role === 'comptable';
     }
 
+    public static function isMagasinier(User $user): bool
+    {
+        return $user->role === 'magasinier';
+    }
+
+    /**
+     * Permissions brutes d'un rôle (pour API / admin).
+     */
+    public static function getPermissionsForRole(string $role): array
+    {
+        return self::PERMISSIONS[$role] ?? [];
+    }
+
     /**
      * Obtient le label du rôle
      */

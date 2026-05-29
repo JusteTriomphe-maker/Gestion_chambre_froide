@@ -76,6 +76,7 @@ class RoleAccessMiddleware
                 'products',
                 'stock-entries',
                 'stock-exits',
+                'sales',
             ],
 
             // Caissier / Caissière

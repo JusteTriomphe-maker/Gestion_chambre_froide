@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use App\Http\Middleware\RoleMiddleware;
+use App\Support\NotifyDG;
+use App\Support\StockUnit;
 
 class StockEntryController extends Controller
 {
@@ -71,6 +73,9 @@ class StockEntryController extends Controller
         $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
             'supplier_id' => 'required|exists:suppliers,id',
+            // quantité saisie + unité (compat : si input_* absent, on garde quantity comme kg)
+            'input_unit' => 'nullable|in:kg,carton',
+            'input_quantity' => 'nullable|numeric|min:0.01',
             'quantity' => 'required|numeric|min:0.01',
             'expiration_date' => 'required|date|after_or_equal:today',
             'entry_date' => 'required|date',
@@ -80,11 +85,36 @@ class StockEntryController extends Controller
             'notes' => 'nullable|string',
         ]);
 
-        $stockEntry = StockEntry::create($validated);
+        $product = Product::find($validated['product_id']);
+
+        $inputUnit = $validated['input_unit'] ?? 'kg';
+        $inputQty = isset($validated['input_quantity']) ? (float) $validated['input_quantity'] : (float) $validated['quantity'];
+
+        try {
+            $converted = StockUnit::toKg($product, $inputUnit, $inputQty);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $quantityKg = $converted['kg'];
+
+        $stockEntry = StockEntry::create([
+            'product_id' => $validated['product_id'],
+            'supplier_id' => $validated['supplier_id'],
+            'input_unit' => $inputUnit,
+            'input_quantity' => $inputQty,
+            'conversion_rate' => $converted['conversion_rate'],
+            'quantity' => $quantityKg,
+            'expiration_date' => $validated['expiration_date'],
+            'entry_date' => $validated['entry_date'],
+            'batch_number' => $validated['batch_number'] ?? null,
+            'unit_price' => $validated['unit_price'],
+            'is_paid' => $validated['is_paid'] ?? false,
+            'notes' => $validated['notes'] ?? null,
+        ]);
 
         // Update product current stock
-        $product = Product::find($validated['product_id']);
-        $product->current_stock += $validated['quantity'];
+        $product->current_stock += $quantityKg;
         $product->save();
 
         // Update supplier total debt if not paid
@@ -96,6 +126,15 @@ class StockEntryController extends Controller
         }
 
         $stockEntry->load(['product', 'supplier']);
+
+        NotifyDG::send('Nouvelle entrée en stock', [
+            "Produit : {$stockEntry->product?->name}",
+            "Fournisseur : {$stockEntry->supplier?->name}",
+            "Quantité : {$stockEntry->input_quantity} {$stockEntry->input_unit} (→ {$stockEntry->quantity} kg)",
+            "Prix unitaire : " . number_format((float) $stockEntry->unit_price, 0, ',', ' ') . " FCFA",
+            "Date : {$stockEntry->entry_date}",
+            "Créée par : {$user->name} ({$user->role})",
+        ]);
 
         return response()->json([
             'message' => 'Stock entry created successfully',

@@ -68,10 +68,7 @@ export default function DebtsIndex() {
     };
 
     const formatCurrency = (value) => {
-        return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
-        }).format(value || 0);
+        return new Intl.NumberFormat('fr-FR').format(value || 0) + ' FCFA';
     };
 
     const formatDate = (date) => {

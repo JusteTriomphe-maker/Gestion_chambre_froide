@@ -1,10 +1,13 @@
 import ModernLayout from '@/Layouts/ModernLayout';
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import { StockEvolutionChart, ProductCategoryChart, MonthlyRevenueChart, TopProductsChart } from '@/Components/Charts';
 import axios from 'axios';
 
 export default function Dashboard() {
+    const page = usePage();
+    const role = page?.props?.auth?.user?.role;
+    const canDownloadSalesPdf = role === 'dg' || role === 'gerant';
     const [stats, setStats] = useState(null);
     const [chartData, setChartData] = useState(null);
     const [alerts, setAlerts] = useState(null);
@@ -75,26 +78,22 @@ export default function Dashboard() {
     const formatCurrency = (value) => {
         const num = parseFloat(value);
         if (isNaN(num) || num === null || num === undefined) {
-            return '0 XOF';
+            return '0 FCFA';
         }
         return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
             notation: 'compact',
             maximumFractionDigits: 1,
-        }).format(num);
+        }).format(num) + ' FCFA';
     };
 
     const formatCurrencyFull = (value) => {
         const num = parseFloat(value);
         if (isNaN(num) || num === null || num === undefined) {
-            return '0 XOF';
+            return '0 FCFA';
         }
         return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
             maximumFractionDigits: 0,
-        }).format(num);
+        }).format(num) + ' FCFA';
     };
 
     const formatDate = (dateString) => {
@@ -201,6 +200,22 @@ export default function Dashboard() {
     return (
         <ModernLayout title="Dashboard">
             <Head title="Dashboard" />
+
+            {canDownloadSalesPdf && (
+                <div className="mb-6 flex justify-end">
+                    <a
+                        href="/sales/daily-report"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-500/25 transition hover:bg-indigo-700"
+                    >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m4-4H8m2-9h4a2 2 0 012 2v1H8V5a2 2 0 012-2zm-4 5h8v9a2 2 0 01-2 2H8a2 2 0 01-2-2v-9z" />
+                        </svg>
+                        PDF des ventes
+                    </a>
+                </div>
+            )}
             
             {/* Stats Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

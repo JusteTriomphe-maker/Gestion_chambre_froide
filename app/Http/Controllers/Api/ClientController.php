@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Client;
 use App\Models\Debt;
+use App\Models\Payment;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use App\Http\Middleware\RoleMiddleware;
+use App\Support\NotifyDG;
 
 class ClientController extends Controller
 {
@@ -125,11 +127,19 @@ class ClientController extends Controller
     {
         $user = $request->user();
         
-        // Check delete permission
-        if (!RoleMiddleware::can($user, 'clients', 'delete')) {
+        // Check delete permission + rôle (seulement DG / Gérant)
+        if (!RoleMiddleware::can($user, 'clients', 'delete') || !in_array($user->role, ['dg', 'gerant'], true)) {
             return response()->json(['message' => 'Accès refusé. Vous n\'avez pas la permission de supprimer des clients.'], 403);
         }
 
+        // Empêcher la suppression si dette restante
+        if ($client->total_debt > 0) {
+            return response()->json([
+                'message' => 'Impossible de supprimer ce client : une dette reste à payer.',
+            ], 422);
+        }
+
+        // Garder la protection existante (liens forts)
         if ($client->stockExits()->count() > 0 || $client->debts()->count() > 0) {
             return response()->json([
                 'message' => 'Cannot delete client with existing stock exits or debts'
@@ -166,27 +176,44 @@ class ClientController extends Controller
     {
         $user = $request->user();
         
-        // Check pay permission
-        if (!RoleMiddleware::can($user, 'debts', 'pay')) {
+        // Check pay permission (module dettes) + rôle (DG / Gérant uniquement)
+        if (!RoleMiddleware::can($user, 'debts', 'pay') || !in_array($user->role, ['dg', 'gerant'], true)) {
             return response()->json(['message' => 'Accès refusé. Vous n\'avez pas la permission de payer des dettes.'], 403);
         }
 
         $validated = $request->validate([
-            'amount' => 'required|numeric|min:0',
+            'amount' => 'required|numeric|min:0.01',
             'notes' => 'nullable|string',
         ]);
 
-        $debt = Debt::create([
+        $currentDebt = (float) $client->total_debt;
+        $paymentAmount = (float) $validated['amount'];
+
+        if ($currentDebt <= 0) {
+            return response()->json([
+                'message' => 'Ce client n\'a pas de dette à payer.',
+                'remaining_debt' => 0,
+            ], 422);
+        }
+
+        if ($paymentAmount > $currentDebt) {
+            return response()->json([
+                'message' => 'Le montant payé ne peut pas dépasser la dette actuelle.',
+                'current_debt' => $currentDebt,
+            ], 422);
+        }
+
+        $type = $paymentAmount >= $currentDebt ? Payment::TYPE_FULL : Payment::TYPE_PARTIAL;
+
+        // Enregistrer le paiement dans la table dédiée
+        $payment = Payment::create([
             'client_id' => $client->id,
-            'supplier_id' => null,
-            'amount' => $validated['amount'],
-            'type' => 'credit',
-            'date' => now()->toDateString(),
-            'notes' => $validated['notes'] ?? 'Payment from client',
-            'reference' => 'PAY-' . strtoupper(uniqid()),
+            'amount' => $paymentAmount,
+            'type' => $type,
         ]);
 
-        $client->total_debt = max(0, $client->total_debt - $validated['amount']);
+        // Mettre à jour la dette agrégée du client
+        $client->total_debt = max(0, $currentDebt - $paymentAmount);
         $client->save();
 
         $unpaidExits = $client->stockExits()->where('is_paid', false)->get();
@@ -202,9 +229,19 @@ class ClientController extends Controller
             if ($remainingAmount <= 0) break;
         }
 
+        NotifyDG::send('Paiement de dette client', [
+            "Client : {$client->name}",
+            "Type : " . ($type === Payment::TYPE_FULL ? 'Paiement total' : 'Paiement partiel'),
+            "Montant payé : " . number_format((float) $paymentAmount, 0, ',', ' ') . " FCFA",
+            "Dette avant : " . number_format((float) $currentDebt, 0, ',', ' ') . " FCFA",
+            "Dette restante : " . number_format((float) $client->total_debt, 0, ',', ' ') . " FCFA",
+            "Effectué par : {$user->name} ({$user->role})",
+        ]);
+
         return response()->json([
             'message' => 'Payment recorded successfully',
-            'debt' => $debt,
+            'payment' => $payment,
+            'payment_type' => $type,
             'remaining_debt' => $client->total_debt,
         ]);
     }

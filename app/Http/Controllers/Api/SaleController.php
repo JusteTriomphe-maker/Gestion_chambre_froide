@@ -8,6 +8,9 @@ use App\Models\SaleItem;
 use App\Models\Product;
 use App\Models\Client;
 use App\Http\Middleware\RoleMiddleware;
+use Barryvdh\DomPDF\PDF as DomPdfWrapper;
+use App\Support\NotifyDG;
+use App\Support\StockUnit;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -50,7 +53,7 @@ class SaleController extends Controller
         // Calculate total from sale_items for PAID sales only
         $paidSalesTotal = $sales->where('is_paid', true)->sum(function ($sale) {
             return $sale->items->sum(function ($item) {
-                return $item->quantity * $item->unit_price;
+                return (float) $item->subtotal;
             });
         });
 
@@ -74,25 +77,26 @@ class SaleController extends Controller
 
         $date = $request->has('date') ? $request->date : now()->format('Y-m-d');
 
-        // Only get PAID sales
-        $dailySales = Sale::where('is_paid', true)
-            ->whereDate('sale_date', $date)
+        $dailySales = Sale::whereDate('sale_date', $date)
             ->with(['user', 'items.product'])
             ->orderBy('created_at', 'desc')
             ->get();
 
-        // Calculate total from sale_items (quantity * unit_price)
-        $totalAmount = $dailySales->sum(function ($sale) {
+        $sumSaleItems = function ($sale) {
             return $sale->items->sum(function ($item) {
-                return $item->quantity * $item->unit_price;
+                return (float) $item->subtotal;
             });
-        });
+        };
+
+        $totalAmount = $dailySales->sum($sumSaleItems);
+
+        $paidAmount = $dailySales->where('is_paid', true)->sum($sumSaleItems);
 
         $transactionCount = $dailySales->count();
 
-        // Sales by product (only from PAID sales)
+        // Sales by product (toutes ventes du jour)
         $salesByProduct = SaleItem::whereHas('sale', function ($query) use ($date) {
-            $query->whereDate('sale_date', $date)->where('is_paid', true);
+            $query->whereDate('sale_date', $date);
         })
         ->with('product')
         ->get()
@@ -111,6 +115,7 @@ class SaleController extends Controller
         return response()->json([
             'date' => $date,
             'total_amount' => $totalAmount,
+            'paid_amount' => $paidAmount,
             'transaction_count' => $transactionCount,
             'sales' => $dailySales,
             'sales_by_product' => $salesByProduct,
@@ -135,8 +140,10 @@ class SaleController extends Controller
             'client_name' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
-            'items.*.quantity' => 'required|numeric|min:0.01',
-            'items.*.unit_price' => 'required|numeric|min:0',
+            'items.*.input_unit' => 'nullable|in:kg,carton',
+            'items.*.input_quantity' => 'nullable|numeric|min:0.01',
+            'items.*.quantity' => 'required|numeric|min:0.01', // compat (kg)
+            'items.*.unit_price' => 'nullable|numeric|min:0',
             'sale_date' => 'nullable|date',
             'is_paid' => 'nullable|boolean',
             'notes' => 'nullable|string',
@@ -149,15 +156,33 @@ class SaleController extends Controller
             // Verify stock availability for all items
             foreach ($validated['items'] as $item) {
                 $product = Product::find($item['product_id']);
-                if ($product->current_stock < $item['quantity']) {
+                $inputUnit = $item['input_unit'] ?? 'kg';
+                $inputQty = isset($item['input_quantity']) ? (float) $item['input_quantity'] : (float) $item['quantity'];
+
+                try {
+                    $converted = StockUnit::toKg($product, $inputUnit, $inputQty);
+                } catch (\InvalidArgumentException $e) {
+                    DB::rollBack();
+                    return response()->json(['message' => $e->getMessage()], 422);
+                }
+
+                $quantityKg = $converted['kg'];
+
+                if ($product->current_stock < $quantityKg) {
                     DB::rollBack();
                     return response()->json([
                         'message' => "Stock insuffisant pour le produit: {$product->name}",
                         'available' => $product->current_stock,
-                        'requested' => $item['quantity'],
+                        'requested' => $quantityKg,
                     ], 422);
                 }
-                $totalAmount += $item['quantity'] * $item['unit_price'];
+
+                $unitPrice = StockUnit::resolveUnitPrice(
+                    $product,
+                    $inputUnit,
+                    isset($item['unit_price']) ? (float) $item['unit_price'] : null
+                );
+                $totalAmount += $inputQty * $unitPrice;
             }
 
             // Handle client - create new if client_name provided
@@ -192,18 +217,31 @@ class SaleController extends Controller
             // Create sale items and update stock
             foreach ($validated['items'] as $item) {
                 $product = Product::find($item['product_id']);
-                $subtotal = $item['quantity'] * $item['unit_price'];
+                $inputUnit = $item['input_unit'] ?? 'kg';
+                $inputQty = isset($item['input_quantity']) ? (float) $item['input_quantity'] : (float) $item['quantity'];
+                $converted = StockUnit::toKg($product, $inputUnit, $inputQty);
+                $quantityKg = $converted['kg'];
+
+                $unitPrice = StockUnit::resolveUnitPrice(
+                    $product,
+                    $inputUnit,
+                    isset($item['unit_price']) ? (float) $item['unit_price'] : null
+                );
+                $subtotal = $inputQty * $unitPrice;
 
                 SaleItem::create([
                     'sale_id' => $sale->id,
                     'product_id' => $item['product_id'],
-                    'quantity' => $item['quantity'],
-                    'unit_price' => $item['unit_price'],
+                    'input_unit' => $inputUnit,
+                    'input_quantity' => $inputQty,
+                    'conversion_rate' => $converted['conversion_rate'],
+                    'quantity' => $quantityKg,
+                    'unit_price' => (float) $unitPrice,
                     'subtotal' => $subtotal,
                 ]);
 
                 // Update stock
-                $product->current_stock -= $item['quantity'];
+                $product->current_stock -= $quantityKg;
                 $product->save();
             }
 
@@ -220,6 +258,15 @@ class SaleController extends Controller
 
             $sale->load(['user', 'client', 'items.product']);
 
+            NotifyDG::send('Nouvelle vente enregistrée', [
+                "Reçu : {$sale->receipt_number}",
+                "Date : {$sale->sale_date?->format('Y-m-d')}",
+                "Client : " . ($sale->client?->name ?? '-'),
+                "Montant : " . number_format((float) $totalAmount, 0, ',', ' ') . " FCFA",
+                "Payée : " . ($isPaid ? 'Oui' : 'Non'),
+                "Caissier : {$user->name} ({$user->role})",
+            ]);
+
             return response()->json([
                 'data' => $sale,
                 'receipt_number' => $sale->receipt_number,
@@ -228,6 +275,9 @@ class SaleController extends Controller
                 'message' => 'Vente enregistrée avec succès'
             ], 201);
 
+        } catch (\InvalidArgumentException $e) {
+            DB::rollBack();
+            return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['message' => 'Erreur: ' . $e->getMessage()], 500);
@@ -317,7 +367,7 @@ class SaleController extends Controller
         // Calculate total from sale_items (quantity * unit_price)
         $totalAmount = $sales->sum(function ($sale) {
             return $sale->items->sum(function ($item) {
-                return $item->quantity * $item->unit_price;
+                return (float) $item->subtotal;
             });
         });
 
@@ -331,7 +381,7 @@ class SaleController extends Controller
                 'date' => $daySales->first()->sale_date->format('Y-m-d'),
                 'total_amount' => $daySales->sum(function ($sale) {
                     return $sale->items->sum(function ($item) {
-                        return $item->quantity * $item->unit_price;
+                        return (float) $item->subtotal;
                     });
                 }),
                 'transaction_count' => $daySales->count(),
@@ -366,5 +416,49 @@ class SaleController extends Controller
             'daily_sales' => $dailySales,
             'top_products' => $topProducts,
         ]);
+    }
+
+    /**
+     * Generate daily PDF report of daily sales (DG / Gérant uniquement).
+     */
+    public function generateDailyReport(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user || !in_array($user->role, ['dg', 'gerant'], true)) {
+            abort(403, 'Accès refusé');
+        }
+
+        $date = $request->get('date', now()->toDateString());
+
+        // Par défaut : toutes les ventes du jour (payées + non payées)
+        // Option : ?paid_only=1 pour n'inclure que les ventes payées
+        $salesQuery = Sale::whereDate('sale_date', $date);
+        if ($request->boolean('paid_only')) {
+            $salesQuery->where('is_paid', true);
+        }
+
+        $sales = $salesQuery
+            ->with(['user', 'client', 'items.product'])
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        $totalAmount = $sales->sum(function ($sale) {
+            return $sale->items->sum(function ($item) {
+                return (float) $item->subtotal;
+            });
+        });
+
+        /** @var DomPdfWrapper $pdf */
+        $pdf = app('dompdf.wrapper');
+        $pdf->loadView('reports.daily_sales', [
+            'date' => $date,
+            'sales' => $sales,
+            'totalAmount' => $totalAmount,
+        ])->setPaper('a4', 'portrait');
+
+        $fileName = 'ventes_' . str_replace('-', '_', $date) . '.pdf';
+
+        return $pdf->download($fileName);
     }
 }

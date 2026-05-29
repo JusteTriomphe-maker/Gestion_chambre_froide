@@ -1,10 +1,16 @@
 import ModernLayout from '@/Layouts/ModernLayout';
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import Pagination from '@/Components/Pagination';
 import axios from 'axios';
+import { usePermissions } from '@/Hooks/usePermissions';
 
 export default function ClientsIndex() {
+    const page = usePage();
+    const roleFromPage = page?.props?.auth?.user?.role;
+    const { isDG: isDGApi, isGerant: isGerantApi } = usePermissions();
+    const isDG = roleFromPage ? roleFromPage === 'dg' : isDGApi;
+    const isGerant = roleFromPage ? roleFromPage === 'gerant' : isGerantApi;
     const [clients, setClients] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
@@ -18,6 +24,9 @@ export default function ClientsIndex() {
         phone: '',
         address: '',
     });
+    const [showPayModal, setShowPayModal] = useState(false);
+    const [payingClient, setPayingClient] = useState(null);
+    const [payAmount, setPayAmount] = useState('');
 
     useEffect(() => {
         fetchClients(currentPage);
@@ -101,11 +110,38 @@ export default function ClientsIndex() {
         });
     };
 
+    const handleOpenPayModal = (client) => {
+        setPayingClient(client);
+        setPayAmount('');
+        setShowPayModal(true);
+    };
+
+    const handlePayDebt = async (e) => {
+        e.preventDefault();
+        if (!payingClient) return;
+
+        try {
+            const amountNumber = parseFloat(payAmount);
+            if (isNaN(amountNumber) || amountNumber <= 0) {
+                return alert('Veuillez saisir un montant valide.');
+            }
+
+            await axios.post(`/api/clients/${payingClient.id}/pay`, {
+                amount: amountNumber,
+            });
+
+            setShowPayModal(false);
+            setPayingClient(null);
+            setPayAmount('');
+            fetchClients(currentPage);
+        } catch (error) {
+            console.error('Error paying debt:', error);
+            alert(error.response?.data?.message || 'Erreur lors du paiement de la dette');
+        }
+    };
+
     const formatCurrency = (value) => {
-        return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
-        }).format(value || 0);
+        return new Intl.NumberFormat('fr-FR').format(value || 0) + ' FCFA';
     };
 
     return (
@@ -218,22 +254,44 @@ export default function ClientsIndex() {
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                             <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    onClick={() => handleEdit(client)}
-                                                    className="p-2 text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 rounded-lg transition duration-150"
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                    </svg>
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(client.id)}
-                                                    className="p-2 text-red-600 hover:text-red-900 hover:bg-red-50 rounded-lg transition duration-150"
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                    </svg>
-                                                </button>
+                                                {(isDG || isGerant) && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleEdit(client)}
+                                                            className="p-2 text-emerald-600 hover:text-emerald-900 hover:bg-emerald-50 rounded-lg transition duration-150"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                            </svg>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleOpenPayModal(client)}
+                                                            disabled={client.total_debt <= 0}
+                                                            className={`p-2 rounded-lg transition duration-150 ${
+                                                                client.total_debt > 0
+                                                                    ? 'text-amber-600 hover:text-amber-900 hover:bg-amber-50'
+                                                                    : 'text-slate-300 cursor-not-allowed'
+                                                            }`}
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(client.id)}
+                                                            disabled={client.total_debt > 0}
+                                                            className={`p-2 rounded-lg transition duration-150 ${
+                                                                client.total_debt > 0
+                                                                    ? 'text-slate-300 cursor-not-allowed'
+                                                                    : 'text-red-600 hover:text-red-900 hover:bg-red-50'
+                                                            }`}
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                            </svg>
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -251,9 +309,9 @@ export default function ClientsIndex() {
 
             {/* Modal */}
             {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
                     <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowModal(false)}></div>
-                    <div className="relative w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl shadow-slate-500/20 overflow-hidden flex flex-col">
+                    <div className="relative w-full max-w-lg max-h-[92vh] sm:max-h-[90vh] bg-white rounded-2xl shadow-2xl shadow-slate-500/20 overflow-hidden flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-emerald-500 to-emerald-600 flex-shrink-0">
                             <h3 className="text-lg font-semibold text-white">
                                 {editingClient ? 'Modifier le Client' : 'Nouveau Client'}
@@ -303,7 +361,7 @@ export default function ClientsIndex() {
                                     />
                                 </div>
                             </div>
-                            <div className="mt-6 flex justify-end gap-3">
+                            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -311,15 +369,73 @@ export default function ClientsIndex() {
                                         setEditingClient(null);
                                         resetForm();
                                     }}
-                                    className="px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium transition duration-150"
+                                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium transition duration-150"
                                 >
                                     Annuler
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-medium rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition duration-150 shadow-lg shadow-emerald-500/25"
+                                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-medium rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition duration-150 shadow-lg shadow-emerald-500/25"
                                 >
                                     {editingClient ? 'Mettre à jour' : 'Créer'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Paiement Dette */}
+            {showPayModal && payingClient && (
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
+                    <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowPayModal(false)}></div>
+                    <div className="relative w-full max-w-md max-h-[92vh] sm:max-h-[90vh] bg-white rounded-2xl shadow-2xl shadow-slate-500/20 overflow-hidden flex flex-col">
+                        <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-amber-500 to-amber-600 flex-shrink-0">
+                            <h3 className="text-lg font-semibold text-white">
+                                Payer la dette de {payingClient.name}
+                            </h3>
+                            <p className="text-xs text-amber-100 mt-1">
+                                Dette actuelle : {formatCurrency(payingClient.total_debt)}
+                            </p>
+                        </div>
+                        <form onSubmit={handlePayDebt} className="p-6">
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                                        Montant à payer
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        value={payAmount}
+                                        onChange={(e) => setPayAmount(e.target.value)}
+                                        className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition duration-150"
+                                        placeholder="Ex: 10000"
+                                        required
+                                    />
+                                    <p className="text-xs text-slate-500 mt-1">
+                                        Si le montant est égal à la dette totale, elle sera considérée comme soldée.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowPayModal(false);
+                                        setPayingClient(null);
+                                        setPayAmount('');
+                                    }}
+                                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium transition duration-150"
+                                >
+                                    Annuler
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 text-white font-medium rounded-xl hover:from-amber-600 hover:to-amber-700 transition duration-150 shadow-lg shadow-amber-500/25"
+                                >
+                                    Confirmer le paiement
                                 </button>
                             </div>
                         </form>

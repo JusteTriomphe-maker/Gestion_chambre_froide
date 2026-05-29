@@ -18,7 +18,10 @@ export default function ProductsIndex() {
         category: '',
         price_buying: '',
         price_selling: '',
+        price_per_carton: '',
         unit: '',
+        stock_mode: 'kg_only',
+        kg_per_carton: '',
         min_threshold: '',
         current_stock: '',
     });
@@ -73,7 +76,10 @@ export default function ProductsIndex() {
                 category: formData.category || null,
                 price_buying: parseFloat(formData.price_buying) || 0,
                 price_selling: parseFloat(formData.price_selling) || 0,
+                price_per_carton: formData.price_per_carton === '' ? null : (parseFloat(formData.price_per_carton) || 0),
                 unit: formData.unit,
+                stock_mode: formData.stock_mode || 'kg_only',
+                kg_per_carton: formData.kg_per_carton === '' ? null : (parseFloat(formData.kg_per_carton) || 0),
                 min_threshold: formData.min_threshold ? parseFloat(formData.min_threshold) : 0,
                 current_stock: formData.current_stock ? parseFloat(formData.current_stock) : 0,
             };
@@ -114,7 +120,10 @@ export default function ProductsIndex() {
             category: product.category || '',
             price_buying: product.price_buying || '',
             price_selling: product.price_selling || '',
+            price_per_carton: product.price_per_carton ?? '',
             unit: product.unit || '',
+            stock_mode: product.stock_mode || 'kg_only',
+            kg_per_carton: product.kg_per_carton ?? '',
             min_threshold: product.min_threshold || '',
             current_stock: product.current_stock || '',
         });
@@ -142,17 +151,29 @@ export default function ProductsIndex() {
             category: '',
             price_buying: '',
             price_selling: '',
+            price_per_carton: '',
             unit: '',
+            stock_mode: 'kg_only',
+            kg_per_carton: '',
             min_threshold: '',
             current_stock: '',
         });
     };
 
-    const formatCurrency = (value) => {
-        return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
-        }).format(value || 0);
+    const formatCurrency = (value) => new Intl.NumberFormat('fr-FR').format(value || 0) + ' FCFA';
+
+    const formatStock = (product) => {
+        const stockKg = Number(product.current_stock || 0);
+        const unit = (product.unit || 'kg').toLowerCase();
+
+        if ((product.stock_mode === 'carton_only' || product.stock_mode === 'kg_and_carton') && Number(product.kg_per_carton || 0) > 0) {
+            const k = Number(product.kg_per_carton);
+            const cartons = Math.floor(stockKg / k);
+            const resteKg = +(stockKg - cartons * k).toFixed(2);
+            return `${cartons} carton(s) + ${resteKg} kg`;
+        }
+
+        return `${stockKg} ${unit}`;
     };
 
     return (
@@ -254,9 +275,8 @@ export default function ProductsIndex() {
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex items-center gap-2">
                                                 <span className={`text-sm font-semibold ${product.current_stock < product.min_threshold ? 'text-red-600' : 'text-slate-900'}`}>
-                                                    {product.current_stock}
+                                                    {formatStock(product)}
                                                 </span>
-                                                <span className="text-xs text-slate-500">{product.unit}</span>
                                                 {product.current_stock < product.min_threshold && (
                                                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-600">
                                                         <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -311,15 +331,15 @@ export default function ProductsIndex() {
 
             {/* Modal */}
             {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
                     <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowModal(false)}></div>
-                    <div className="relative w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl shadow-slate-500/20 overflow-hidden flex flex-col">
+                    <div className="relative w-full max-w-lg max-h-[92vh] sm:max-h-[90vh] bg-white rounded-2xl shadow-2xl shadow-slate-500/20 overflow-hidden flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-indigo-500 to-purple-600 flex-shrink-0">
                             <h3 className="text-lg font-semibold text-white">
                                 {editingProduct ? 'Modifier le Produit' : 'Nouveau Produit'}
                             </h3>
                         </div>
-                        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto">
+                        <form onSubmit={handleSubmit} className="p-4 sm:p-6 overflow-y-auto">
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Nom du produit</label>
@@ -332,7 +352,7 @@ export default function ProductsIndex() {
                                         placeholder="Ex: Pommes congelées"
                                     />
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Code Barres</label>
                                         <input
@@ -353,7 +373,7 @@ export default function ProductsIndex() {
                                         />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Prix Achat (XOF)</label>
                                         <input
@@ -377,7 +397,47 @@ export default function ProductsIndex() {
                                         />
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Mode Stock</label>
+                                        <select
+                                            value={formData.stock_mode}
+                                            onChange={(e) => setFormData({ ...formData, stock_mode: e.target.value })}
+                                            className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition duration-150"
+                                        >
+                                            <option value="kg_only">Kg uniquement</option>
+                                            <option value="carton_only">Carton uniquement</option>
+                                            <option value="kg_and_carton">Kg + Carton</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Kg par carton</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={formData.kg_per_carton}
+                                            onChange={(e) => setFormData({ ...formData, kg_per_carton: e.target.value })}
+                                            disabled={formData.stock_mode === 'kg_only'}
+                                            className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition duration-150 disabled:bg-slate-100"
+                                            placeholder="Ex: 10"
+                                        />
+                                    </div>
+                                </div>
+                                {formData.stock_mode !== 'kg_only' && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Prix / carton (FCFA)</label>
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={formData.price_per_carton}
+                                            onChange={(e) => setFormData({ ...formData, price_per_carton: e.target.value })}
+                                            className="block w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition duration-150"
+                                            placeholder="Ex: 15000"
+                                        />
+                                        <p className="text-xs text-slate-500 mt-1">Indépendant du prix au kg.</p>
+                                    </div>
+                                )}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Unité</label>
                                         <select
@@ -417,7 +477,7 @@ export default function ProductsIndex() {
                                     </div>
                                 )}
                             </div>
-                            <div className="mt-6 flex justify-end gap-3">
+                            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -425,14 +485,14 @@ export default function ProductsIndex() {
                                         setEditingProduct(null);
                                         resetForm();
                                     }}
-                                    className="px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium transition duration-150"
+                                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium transition duration-150"
                                 >
                                     Annuler
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={saving}
-                                    className="px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-xl hover:from-indigo-600 hover:to-purple-700 transition duration-150 shadow-lg shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-xl hover:from-indigo-600 hover:to-purple-700 transition duration-150 shadow-lg shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                                 >
                                     {saving ? (
                                         <>

@@ -1,11 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { usePage } from '@inertiajs/react';
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ModernLayout from '@/Layouts/ModernLayout';
+import { Head } from '@inertiajs/react';
 import SaleReceipt from '@/Components/SaleReceipt';
 import axios from 'axios';
+import { usePermissions } from '@/Hooks/usePermissions';
 
 export default function SalesIndex() {
-    const { props } = usePage();
+    const page = usePage();
+    const roleFromPage = page?.props?.auth?.user?.role;
+    const { isDG: isDGApi, isGerant: isGerantApi } = usePermissions();
+    const isDG = roleFromPage ? roleFromPage === 'dg' : isDGApi;
+    const isGerant = roleFromPage ? roleFromPage === 'gerant' : isGerantApi;
     const [sales, setSales] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showReceipt, setShowReceipt] = useState(false);
@@ -17,7 +23,9 @@ export default function SalesIndex() {
     const [saleItems, setSaleItems] = useState([]);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [quantity, setQuantity] = useState(1);
+    const [unit, setUnit] = useState('kg');
     const [saving, setSaving] = useState(false);
+    const [isPaid, setIsPaid] = useState(true);
     
     const [clientInput, setClientInput] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -72,10 +80,14 @@ export default function SalesIndex() {
         setClientInput('');
         setFilteredClients([]);
         setShowSuggestions(false);
+        setIsPaid(true);
         fetchProducts();
         fetchClients();
         setShowNewSale(true);
     };
+
+    const getSellingPriceKg = (product) => Number(product?.price_selling ?? 0);
+    const getSellingPriceCarton = (product) => Number(product?.price_per_carton ?? 0);
 
     const handleClientInputChange = (e) => {
         const value = e.target.value;
@@ -112,24 +124,50 @@ export default function SalesIndex() {
         if (!selectedProduct || quantity < 1) return;
         
         const existingIndex = saleItems.findIndex(item => item.product_id === selectedProduct.id);
+        const inputUnit = unit;
+        const inputQty = Number(quantity) || 0;
+        const unitPrice = inputUnit === 'carton' ? getSellingPriceCarton(selectedProduct) : getSellingPriceKg(selectedProduct);
+        const qtyKg = inputUnit === 'carton' && Number(selectedProduct.kg_per_carton) > 0
+            ? inputQty * Number(selectedProduct.kg_per_carton)
+            : inputQty;
         
         if (existingIndex >= 0) {
             const updated = [...saleItems];
-            updated[existingIndex].quantity += quantity;
-            updated[existingIndex].subtotal = updated[existingIndex].quantity * selectedProduct.selling_price;
-            setSaleItems(updated);
+            if ((updated[existingIndex].input_unit ?? 'kg') !== inputUnit) {
+                setSaleItems([...saleItems, {
+                    product_id: selectedProduct.id,
+                    product: selectedProduct,
+                    input_unit: inputUnit,
+                    input_quantity: inputQty,
+                    quantity: inputQty, // compat API
+                    quantity_kg: qtyKg,
+                    unit_price: unitPrice,
+                    subtotal: inputQty * unitPrice,
+                }]);
+            } else {
+                updated[existingIndex].input_quantity = (Number(updated[existingIndex].input_quantity) || 0) + inputQty;
+                updated[existingIndex].quantity = updated[existingIndex].input_quantity; // compat API
+                updated[existingIndex].quantity_kg = (Number(updated[existingIndex].quantity_kg) || 0) + qtyKg;
+                updated[existingIndex].unit_price = unitPrice;
+                updated[existingIndex].subtotal = updated[existingIndex].input_quantity * unitPrice;
+                setSaleItems(updated);
+            }
         } else {
             setSaleItems([...saleItems, {
                 product_id: selectedProduct.id,
                 product: selectedProduct,
-                quantity: quantity,
-                unit_price: selectedProduct.selling_price,
-                subtotal: quantity * selectedProduct.selling_price
+                input_unit: inputUnit,
+                input_quantity: inputQty,
+                quantity: inputQty, // compat API
+                quantity_kg: qtyKg,
+                unit_price: unitPrice,
+                subtotal: inputQty * unitPrice,
             }]);
         }
         
         setSelectedProduct(null);
         setQuantity(1);
+        setUnit('kg');
     };
 
     const removeItem = (index) => {
@@ -149,8 +187,12 @@ export default function SalesIndex() {
             const saleData = {
                 items: saleItems.map(item => ({
                     product_id: item.product_id,
-                    quantity: item.quantity
-                }))
+                    input_unit: item.input_unit ?? 'kg',
+                    input_quantity: item.input_quantity ?? item.quantity,
+                    quantity: item.input_quantity ?? item.quantity, // compat
+                    unit_price: item.unit_price,
+                })),
+                is_paid: isPaid,
             };
             
             const matchedClient = clients.find(
@@ -189,20 +231,36 @@ export default function SalesIndex() {
     };
 
     return (
-        <AuthenticatedLayout>
+        <ModernLayout title="Ventes">
+            <Head title="Ventes" />
             <div className="py-6">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center mb-6">
                         <h1 className="text-2xl font-bold text-gray-900">Gestion des Ventes</h1>
-                        <button
-                            onClick={openNewSale}
-                            className="px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 flex items-center gap-2"
-                        >
-                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                            Nouvelle Vente
-                        </button>
+                        <div className="flex items-center gap-3">
+                            {(isDG || isGerant) && (
+                                <a
+                                    href="/sales/daily-report"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center gap-2"
+                                >
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v8m4-4H8m2-9h4a2 2 0 012 2v1H8V5a2 2 0 012-2zm-4 5h8v9a2 2 0 01-2 2H8a2 2 0 01-2-2v-9z" />
+                                    </svg>
+                                    Imprimer rapport journalier
+                                </a>
+                            )}
+                            <button
+                                onClick={openNewSale}
+                                className="px-4 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 flex items-center gap-2"
+                            >
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                </svg>
+                                Nouvelle Vente
+                            </button>
+                        </div>
                     </div>
 
                     {dailySummary && (
@@ -210,7 +268,12 @@ export default function SalesIndex() {
                             <div className="bg-white overflow-hidden shadow-lg rounded-lg p-6 border-l-4 border-red-600">
                                 <p className="text-sm text-gray-500">Ventes du jour</p>
                                 <p className="text-2xl font-bold text-red-700">{formatCurrency(dailySummary.total_amount)}</p>
-                                <p className="text-xs text-gray-500 mt-1">{dailySummary.date}</p>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    {dailySummary.date}
+                                    {dailySummary.paid_amount != null && dailySummary.paid_amount !== dailySummary.total_amount && (
+                                        <span className="block">dont payé : {formatCurrency(dailySummary.paid_amount)}</span>
+                                    )}
+                                </p>
                             </div>
                             <div className="bg-white overflow-hidden shadow-lg rounded-lg p-6 border-l-4 border-blue-600">
                                 <p className="text-sm text-gray-500">Nombre de transactions</p>
@@ -277,10 +340,10 @@ export default function SalesIndex() {
             </div>
 
             {showNewSale && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
                     <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowNewSale(false)}></div>
-                    <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-                        <div className="px-6 py-4 bg-red-700 text-white flex justify-between items-center">
+                    <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl overflow-hidden max-h-[92vh] sm:max-h-[90vh] flex flex-col">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 bg-red-700 text-white flex justify-between items-center gap-2">
                             <h2 className="text-lg font-bold">Nouvelle Vente</h2>
                             <button onClick={() => setShowNewSale(false)} className="text-red-200 hover:text-white">
                                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -289,7 +352,7 @@ export default function SalesIndex() {
                             </button>
                         </div>
                         
-                        <div className="flex-1 overflow-y-auto p-6">
+                        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                             <div className="mb-4 relative">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Client</label>
                                 <div className="relative">
@@ -342,7 +405,31 @@ export default function SalesIndex() {
                                 </p>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-4 mb-4">
+                            <div className="mb-4">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Statut du paiement</label>
+                                <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            checked={isPaid}
+                                            onChange={() => setIsPaid(true)}
+                                            className="w-4 h-4 text-red-600"
+                                        />
+                                        <span className="text-sm text-gray-700">Payée</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                            type="radio"
+                                            checked={!isPaid}
+                                            onChange={() => setIsPaid(false)}
+                                            className="w-4 h-4 text-red-600"
+                                        />
+                                        <span className="text-sm text-gray-700">Crédit (dette client)</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Produit</label>
                                     <select
@@ -356,9 +443,20 @@ export default function SalesIndex() {
                                         <option value="">Sélectionner un produit</option>
                                         {products.map(product => (
                                             <option key={product.id} value={product.id}>
-                                                {product.name} - {product.unit} - {formatCurrency(product.selling_price)}
+                                                {product.name} - {formatCurrency(product.price_selling)} /kg {product.price_per_carton ? ` - ${formatCurrency(product.price_per_carton)} /carton` : ''}
                                             </option>
                                         ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Unité</label>
+                                    <select
+                                        value={unit}
+                                        onChange={(e) => setUnit(e.target.value)}
+                                        className="w-full border border-gray-300 rounded-lg px-3 py-2"
+                                    >
+                                        <option value="kg">Kg</option>
+                                        <option value="carton">Carton</option>
                                     </select>
                                 </div>
                                 <div>
@@ -371,11 +469,11 @@ export default function SalesIndex() {
                                         className="w-full border border-gray-300 rounded-lg px-3 py-2"
                                     />
                                 </div>
-                                <div className="flex items-end">
+                                <div className="flex items-end sm:col-span-3">
                                     <button
                                         onClick={addItem}
                                         disabled={!selectedProduct}
-                                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
+                                        className="w-full min-h-[44px] px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300"
                                     >
                                         Ajouter
                                     </button>
@@ -385,6 +483,7 @@ export default function SalesIndex() {
                             {saleItems.length > 0 && (
                                 <div className="mb-4">
                                     <h3 className="font-semibold text-gray-900 mb-2">Articles</h3>
+                                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
                                     <table className="min-w-full divide-y divide-gray-200">
                                         <thead className="bg-gray-50">
                                             <tr>
@@ -399,7 +498,10 @@ export default function SalesIndex() {
                                             {saleItems.map((item, index) => (
                                                 <tr key={index}>
                                                     <td className="px-4 py-2">{item.product?.name}</td>
-                                                    <td className="px-4 py-2 text-right">{item.quantity}</td>
+                                                    <td className="px-4 py-2 text-right">
+                                                        {item.input_quantity} {item.input_unit}
+                                                        <div className="text-xs text-gray-500">→ {item.quantity_kg} kg</div>
+                                                    </td>
                                                     <td className="px-4 py-2 text-right">{formatCurrency(item.unit_price)}</td>
                                                     <td className="px-4 py-2 text-right font-medium">{formatCurrency(item.subtotal)}</td>
                                                     <td className="px-4 py-2">
@@ -414,6 +516,7 @@ export default function SalesIndex() {
                                             ))}
                                         </tbody>
                                     </table>
+                                    </div>
                                     
                                     <div className="mt-4 flex justify-end">
                                         <div className="text-right">
@@ -425,17 +528,17 @@ export default function SalesIndex() {
                             )}
                         </div>
 
-                        <div className="px-6 py-4 bg-gray-50 flex justify-end gap-4">
+                        <div className="px-4 py-3 sm:px-6 sm:py-4 bg-gray-50 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-4">
                             <button
                                 onClick={() => setShowNewSale(false)}
-                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+                                className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
                             >
                                 Annuler
                             </button>
                             <button
                                 onClick={handleSale}
                                 disabled={saleItems.length === 0 || saving}
-                                className="px-6 py-2 bg-red-700 text-white rounded-lg hover:bg-red-800 disabled:bg-gray-300"
+                                className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 bg-red-700 text-white rounded-lg hover:bg-red-800 disabled:bg-gray-300"
                             >
                                 {saving ? 'Traitement...' : 'Valider la vente'}
                             </button>
@@ -454,7 +557,7 @@ export default function SalesIndex() {
                     }}
                 />
             )}
-        </AuthenticatedLayout>
+        </ModernLayout>
     );
 }
 

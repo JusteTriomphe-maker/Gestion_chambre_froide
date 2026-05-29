@@ -14,7 +14,7 @@ return [
     |
     */
 
-    'default' => 'log',
+    'default' => env('MAIL_MAILER', 'log'),
 
     /*
     |--------------------------------------------------------------------------
@@ -114,5 +114,16 @@ return [
         'address' => env('MAIL_FROM_ADDRESS', 'hello@example.com'),
         'name' => env('MAIL_FROM_NAME', 'Example'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Mail Override (Dev / Recette)
+    |--------------------------------------------------------------------------
+    |
+    | Si défini, toutes les notifications DG seront envoyées à cette adresse,
+    | quel que soit le nombre de DG en base. Utile en local.
+    |
+    */
+    'override_to' => env('MAIL_OVERRIDE_TO'),
 
 ];

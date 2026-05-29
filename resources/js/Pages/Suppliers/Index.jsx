@@ -105,10 +105,7 @@ export default function SuppliersIndex() {
     };
 
     const formatCurrency = (value) => {
-        return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
-        }).format(value || 0);
+        return new Intl.NumberFormat('fr-FR').format(value || 0) + ' FCFA';
     };
 
     return (
@@ -254,9 +251,9 @@ export default function SuppliersIndex() {
 
             {/* Modal */}
             {showModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
                     <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowModal(false)}></div>
-                    <div className="relative w-full max-w-lg max-h-[90vh] bg-white rounded-2xl shadow-2xl shadow-slate-500/20 overflow-hidden flex flex-col">
+                    <div className="relative w-full max-w-lg max-h-[92vh] sm:max-h-[90vh] bg-white rounded-2xl shadow-2xl shadow-slate-500/20 overflow-hidden flex flex-col">
                         <div className="px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-violet-500 to-violet-600 flex-shrink-0">
                             <h3 className="text-lg font-semibold text-white">
                                 {editingSupplier ? 'Modifier le Fournisseur' : 'Nouveau Fournisseur'}
@@ -316,7 +313,7 @@ export default function SuppliersIndex() {
                                     />
                                 </div>
                             </div>
-                            <div className="mt-6 flex justify-end gap-3">
+                            <div className="mt-6 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3">
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -324,13 +321,13 @@ export default function SuppliersIndex() {
                                         setEditingSupplier(null);
                                         resetForm();
                                     }}
-                                    className="px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium transition duration-150"
+                                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl font-medium transition duration-150"
                                 >
                                     Annuler
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-4 py-2.5 bg-gradient-to-r from-violet-500 to-violet-600 text-white font-medium rounded-xl hover:from-violet-600 hover:to-violet-700 transition duration-150 shadow-lg shadow-violet-500/25"
+                                    className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-gradient-to-r from-violet-500 to-violet-600 text-white font-medium rounded-xl hover:from-violet-600 hover:to-violet-700 transition duration-150 shadow-lg shadow-violet-500/25"
                                 >
                                     {editingSupplier ? 'Mettre à jour' : 'Créer'}
                                 </button>

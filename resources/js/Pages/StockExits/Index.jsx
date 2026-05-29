@@ -4,6 +4,31 @@ import { Head } from '@inertiajs/react';
 import axios from 'axios';
 import SaleReceipt from '@/Components/SaleReceipt';
 
+/** Montant d'une ligne : utilise subtotal (correct kg/carton), pas quantity×prix. */
+function lineItemAmount(item) {
+    if (item.subtotal != null && item.subtotal !== '') {
+        return Number(item.subtotal);
+    }
+    const qty = item.input_quantity ?? item.quantity;
+    return Number(qty) * Number(item.unit_price);
+}
+
+/** Total d'une vente : total_amount en base ou somme des lignes. */
+function saleTotalAmount(sale) {
+    if (sale?.total_amount != null && sale.total_amount !== '') {
+        return Number(sale.total_amount);
+    }
+    return (sale?.items || []).reduce((sum, item) => sum + lineItemAmount(item), 0);
+}
+
+/** Quantité affichée (unité saisie, pas les kg stock). */
+function formatLineQuantity(item) {
+    if (item.input_quantity != null && item.input_unit) {
+        return `${item.input_quantity} ${item.input_unit}`;
+    }
+    return String(item.quantity ?? '');
+}
+
 // =============================================================================
 // SOUS-COMPOSANTS
 // =============================================================================
@@ -15,11 +40,7 @@ function SaleDetailModal({ sale, isOpen, onClose }) {
     if (!isOpen || !sale) return null;
 
     const formatCurrency = (value) => {
-        return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
-            maximumFractionDigits: 0,
-        }).format(value || 0);
+        return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value || 0) + ' FCFA';
     };
 
     const formatDate = (date) => {
@@ -34,13 +55,10 @@ function SaleDetailModal({ sale, isOpen, onClose }) {
     const items = sale.items || [];
     const productCount = items.length;
 
-    // Calcul dynamique du total
-    const calculateTotal = () => {
-        return items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
-    };
+    const calculateTotal = () => saleTotalAmount(sale);
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
             {/* Backdrop */}
             <div 
                 className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" 
@@ -48,9 +66,9 @@ function SaleDetailModal({ sale, isOpen, onClose }) {
             ></div>
             
             {/* Modal Content */}
-            <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl overflow-hidden max-h-[92vh] sm:max-h-[90vh] flex flex-col">
                 {/* Header */}
-                <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex justify-between items-center">
+                <div className="px-4 py-3 sm:px-6 sm:py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex justify-between items-center gap-2">
                     <div>
                         <h2 className="text-lg font-bold">Détails de la Vente</h2>
                         <p className="text-sm text-indigo-200">Reçu: {sale.receipt_number}</p>
@@ -66,9 +84,9 @@ function SaleDetailModal({ sale, isOpen, onClose }) {
                 </div>
 
                 {/* Content */}
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                     {/* Sale Info */}
-                    <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
                         <div className="bg-slate-50 rounded-lg p-4">
                             <p className="text-sm text-slate-500">Date</p>
                             <p className="font-semibold text-slate-900">{formatDate(sale.sale_date)}</p>
@@ -98,30 +116,30 @@ function SaleDetailModal({ sale, isOpen, onClose }) {
                         <h3 className="text-sm font-semibold text-slate-900 mb-3">
                             Articles ({productCount})
                         </h3>
-                        <div className="border border-slate-200 rounded-lg overflow-hidden">
+                        <div className="border border-slate-200 rounded-lg overflow-x-auto">
                             <table className="min-w-full divide-y divide-slate-200">
                                 <thead className="bg-slate-50">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Produit</th>
-                                        <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Qté</th>
-                                        <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Prix Unit.</th>
-                                        <th className="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Total</th>
+                                        <th className="px-3 sm:px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase">Produit</th>
+                                        <th className="px-3 sm:px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Qté</th>
+                                        <th className="px-3 sm:px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Prix Unit.</th>
+                                        <th className="px-3 sm:px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase">Total</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-slate-200">
                                     {items.map((item, index) => (
                                         <tr key={index}>
-                                            <td className="px-4 py-3 text-sm text-slate-900">
+                                            <td className="px-3 sm:px-4 py-3 text-sm text-slate-900">
                                                 {item.product?.name || 'Produit supprimé'}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-slate-900 text-right">
-                                                {item.quantity}
+                                                {formatLineQuantity(item)}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-slate-900 text-right">
                                                 {formatCurrency(item.unit_price)}
                                             </td>
                                             <td className="px-4 py-3 text-sm font-medium text-slate-900 text-right">
-                                                {formatCurrency(item.quantity * item.unit_price)}
+                                                {formatCurrency(lineItemAmount(item))}
                                             </td>
                                         </tr>
                                     ))}
@@ -164,6 +182,7 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
     const [saleItems, setSaleItems] = useState([]);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [quantity, setQuantity] = useState(1);
+    const [unit, setUnit] = useState('kg');
     const [selectedClient, setSelectedClient] = useState(null);
     const [clientInput, setClientInput] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -239,24 +258,52 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
         if (!selectedProduct || quantity < 1) return;
         
         const existingIndex = saleItems.findIndex(item => item.product_id === selectedProduct.id);
+        const inputUnit = unit;
+        const inputQty = Number(quantity) || 0;
+        const unitPrice = inputUnit === 'carton'
+            ? (Number(selectedProduct.price_per_carton) || 0)
+            : (Number(selectedProduct.price_selling) || 0);
+        const qtyKg = inputUnit === 'carton' && Number(selectedProduct.kg_per_carton) > 0
+            ? inputQty * Number(selectedProduct.kg_per_carton)
+            : inputQty;
         
         if (existingIndex >= 0) {
             const updated = [...saleItems];
-            updated[existingIndex].quantity += quantity;
-            updated[existingIndex].subtotal = updated[existingIndex].quantity * selectedProduct.price_selling;
-            setSaleItems(updated);
+            if ((updated[existingIndex].input_unit ?? 'kg') !== inputUnit) {
+                setSaleItems([...saleItems, {
+                    product_id: selectedProduct.id,
+                    product: selectedProduct,
+                    input_unit: inputUnit,
+                    input_quantity: inputQty,
+                    quantity: inputQty, // compat API
+                    quantity_kg: qtyKg,
+                    unit_price: unitPrice,
+                    subtotal: inputQty * unitPrice,
+                }]);
+            } else {
+                updated[existingIndex].input_quantity = (Number(updated[existingIndex].input_quantity) || 0) + inputQty;
+                updated[existingIndex].quantity = updated[existingIndex].input_quantity; // compat API
+                updated[existingIndex].quantity_kg = (Number(updated[existingIndex].quantity_kg) || 0) + qtyKg;
+                updated[existingIndex].unit_price = unitPrice;
+                updated[existingIndex].subtotal = updated[existingIndex].input_quantity * unitPrice;
+                setSaleItems(updated);
+            }
         } else {
             setSaleItems([...saleItems, {
                 product_id: selectedProduct.id,
                 product: selectedProduct,
-                quantity: quantity,
-                unit_price: selectedProduct.price_selling,
-                subtotal: quantity * selectedProduct.price_selling
+                input_unit: inputUnit,
+                input_quantity: inputQty,
+                quantity: inputQty, // compat API
+                quantity_kg: qtyKg,
+                unit_price: unitPrice,
+                subtotal: inputQty * unitPrice
             }]);
         }
         
         setSelectedProduct(null);
         setQuantity(1);
+        setUnit('kg');
     };
 
     const removeItem = (index) => {
@@ -283,7 +330,9 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
             const saleData = {
                 items: saleItems.map(item => ({
                     product_id: item.product_id,
-                    quantity: item.quantity,
+                    input_unit: item.input_unit ?? 'kg',
+                    input_quantity: item.input_quantity ?? item.quantity,
+                    quantity: item.input_quantity ?? item.quantity, // compat
                     unit_price: item.unit_price
                 })),
                 is_paid: isPaid
@@ -315,26 +364,23 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
         setFilteredClients([]);
         setShowSuggestions(false);
         setQuantity(1);
+        setUnit('kg');
         setIsPaid(true);
         setError(null);
     };
 
     const formatCurrency = (value) => {
-        return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
-            maximumFractionDigits: 0,
-        }).format(value || 0);
+        return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value || 0) + ' FCFA';
     };
 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-2 sm:p-4">
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}></div>
             
-            <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-                <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex justify-between items-center">
+            <div className="relative w-full max-w-2xl bg-white rounded-xl shadow-2xl overflow-hidden max-h-[92vh] sm:max-h-[90vh] flex flex-col">
+                <div className="px-4 py-3 sm:px-6 sm:py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white flex justify-between items-center gap-2">
                     <h2 className="text-lg font-bold">Nouvelle Vente</h2>
                     <button onClick={onClose} className="text-indigo-200 hover:text-white">
                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -343,7 +389,7 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6">
                     {error && (
                         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
                             {error}
@@ -406,7 +452,7 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
                     {/* Payment Status */}
                     <div className="mb-4">
                         <label className="block text-sm font-medium text-slate-700 mb-2">Statut du paiement</label>
-                        <div className="flex gap-4">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:gap-4">
                             <label className="flex items-center gap-2 cursor-pointer">
                                 <input
                                     type="radio"
@@ -429,7 +475,7 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
                     </div>
 
                     {/* Add Product */}
-                    <div className="grid grid-cols-3 gap-4 mb-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                         <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Produit</label>
                             <select
@@ -449,6 +495,17 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
                             </select>
                         </div>
                         <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Unité</label>
+                            <select
+                                value={unit}
+                                onChange={(e) => setUnit(e.target.value)}
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            >
+                                <option value="kg">Kg</option>
+                                <option value="carton">Carton</option>
+                            </select>
+                        </div>
+                        <div>
                             <label className="block text-sm font-medium text-slate-700 mb-1">Quantité</label>
                             <input
                                 type="number"
@@ -458,11 +515,11 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
                                 className="w-full border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                             />
                         </div>
-                        <div className="flex items-end">
+                        <div className="flex items-end sm:col-span-3">
                             <button
                                 onClick={addItem}
                                 disabled={!selectedProduct}
-                                className="w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition"
+                                className="w-full min-h-[44px] px-4 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition"
                             >
                                 Ajouter
                             </button>
@@ -473,7 +530,7 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
                     {saleItems.length > 0 && (
                         <div className="mb-4">
                             <h3 className="font-semibold text-slate-900 mb-2">Articles</h3>
-                            <div className="border border-slate-200 rounded-lg overflow-hidden">
+                            <div className="border border-slate-200 rounded-lg overflow-x-auto">
                                 <table className="min-w-full divide-y divide-slate-200">
                                     <thead className="bg-slate-50">
                                         <tr>
@@ -488,7 +545,10 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
                                         {saleItems.map((item, index) => (
                                             <tr key={index}>
                                                 <td className="px-4 py-2 text-sm">{item.product?.name}</td>
-                                                <td className="px-4 py-2 text-sm text-right">{item.quantity}</td>
+                                                <td className="px-4 py-2 text-sm text-right">
+                                                    {item.input_quantity} {item.input_unit}
+                                                    <div className="text-xs text-slate-500">→ {item.quantity_kg} kg</div>
+                                                </td>
                                                 <td className="px-4 py-2 text-sm text-right">{formatCurrency(item.unit_price)}</td>
                                                 <td className="px-4 py-2 text-sm font-medium text-right">{formatCurrency(item.subtotal)}</td>
                                                 <td className="px-4 py-2">
@@ -515,17 +575,17 @@ function NewSaleModal({ isOpen, onClose, onSuccess }) {
                     )}
                 </div>
 
-                <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-4">
+                <div className="px-4 py-3 sm:px-6 sm:py-4 bg-slate-50 border-t border-slate-200 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-4">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
+                        className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition"
                     >
                         Annuler
                     </button>
                     <button
                         onClick={handleSale}
                         disabled={saleItems.length === 0 || loading}
-                        className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition"
+                        className="w-full sm:w-auto min-h-[44px] px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition"
                     >
                         {loading ? 'Traitement...' : 'Valider la vente'}
                     </button>
@@ -654,10 +714,7 @@ export default function StockExitsIndex() {
      * @param {object} sale - L'objet sale
      * @returns {number} - Le total calculé
      */
-    const calculateTotal = (sale) => {
-        const items = sale.items || [];
-        return items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
-    };
+    const calculateTotal = (sale) => saleTotalAmount(sale);
 
     /**
      * Compte le nombre de produits dans une vente
@@ -672,11 +729,7 @@ export default function StockExitsIndex() {
      * Formate le montant en devise
      */
     const formatCurrency = (value) => {
-        return new Intl.NumberFormat('fr-FR', {
-            style: 'currency',
-            currency: 'XOF',
-            maximumFractionDigits: 0,
-        }).format(value || 0);
+        return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(value || 0) + ' FCFA';
     };
 
     /**

@@ -12,6 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use App\Http\Middleware\RoleMiddleware;
+use App\Support\NotifyDG;
+use App\Support\StockUnit;
 
 class StockExitController extends Controller
 {
@@ -96,7 +98,9 @@ class StockExitController extends Controller
         $validated = $request->validate([
             'items' => 'required|array|min:1',
             'items.*.product_id' => 'required|exists:products,id',
-            'items.*.quantity' => 'required|numeric|min:0.01',
+            'items.*.input_unit' => 'nullable|in:kg,carton',
+            'items.*.input_quantity' => 'nullable|numeric|min:0.01',
+            'items.*.quantity' => 'required|numeric|min:0.01', // compat (kg)
             'items.*.unit_price' => 'required|numeric|min:0',
             'exit_date' => 'required|date',
             'client_id' => 'nullable|exists:clients,id',
@@ -131,7 +135,8 @@ class StockExitController extends Controller
                 // Calculate total amount
                 $totalAmount = 0;
                 foreach ($validated['items'] as $item) {
-                    $totalAmount += $item['quantity'] * $item['unit_price'];
+                    $lineQty = (float) ($item['input_quantity'] ?? $item['quantity']);
+                    $totalAmount += $lineQty * (float) $item['unit_price'];
                 }
 
                 // Determine payment status
@@ -151,30 +156,46 @@ class StockExitController extends Controller
                 $saleItems = [];
                 foreach ($validated['items'] as $itemData) {
                     $product = Product::find($itemData['product_id']);
-                    
-                    // Check stock availability
-                    if ($product->current_stock < $itemData['quantity']) {
-                        throw new \Exception("Stock insuffisant pour le produit: {$product->name}. Stock disponible: {$product->current_stock}");
+
+                    $inputUnit = $itemData['input_unit'] ?? 'kg';
+                    $inputQty = isset($itemData['input_quantity']) ? (float) $itemData['input_quantity'] : (float) $itemData['quantity'];
+
+                    try {
+                        $converted = StockUnit::toKg($product, $inputUnit, $inputQty);
+                    } catch (\InvalidArgumentException $e) {
+                        throw new \Exception($e->getMessage());
                     }
 
-                    $subtotal = $itemData['quantity'] * $itemData['unit_price'];
+                    $quantityKg = $converted['kg'];
+                    
+                    // Check stock availability
+                    if ($product->current_stock < $quantityKg) {
+                        throw new \Exception("Stock insuffisant pour le produit: {$product->name}. Stock disponible: {$product->current_stock} kg");
+                    }
+
+                    $subtotal = $inputQty * (float) $itemData['unit_price'];
 
                     // Create sale item
                     SaleItem::create([
                         'sale_id' => $sale->id,
                         'product_id' => $itemData['product_id'],
-                        'quantity' => $itemData['quantity'],
+                        'input_unit' => $inputUnit,
+                        'input_quantity' => $inputQty,
+                        'conversion_rate' => $converted['conversion_rate'],
+                        'quantity' => $quantityKg, // stock truth (kg)
                         'unit_price' => $itemData['unit_price'],
                         'subtotal' => $subtotal,
                     ]);
 
                     // Reduce product stock
-                    $product->current_stock -= $itemData['quantity'];
+                    $product->current_stock -= $quantityKg;
                     $product->save();
 
                     $saleItems[] = [
                         'product' => $product->name,
-                        'quantity' => $itemData['quantity'],
+                        'quantity' => $inputQty,
+                        'unit' => $inputUnit,
+                        'quantity_kg' => $quantityKg,
                         'unit_price' => $itemData['unit_price'],
                         'subtotal' => $subtotal,
                     ];
@@ -191,6 +212,15 @@ class StockExitController extends Controller
 
                 // Load relationships for response
                 $sale->load(['client', 'user', 'items.product']);
+
+                NotifyDG::send('Sortie de stock / Vente (multi-produits)', [
+                    "Reçu : {$receiptNumber}",
+                    "Client : " . ($sale->client?->name ?? '-'),
+                    "Date : {$validated['exit_date']}",
+                    "Montant : " . number_format((float) $totalAmount, 0, ',', ' ') . " FCFA",
+                    "Payée : " . ($isPaid ? 'Oui' : 'Non'),
+                    "Caissier : {$user->name} ({$user->role})",
+                ]);
 
                 return response()->json([
                     'message' => 'Vente créée avec succès',
@@ -218,7 +248,9 @@ class StockExitController extends Controller
             'product_id' => 'required|exists:products,id',
             'client_id' => 'nullable|exists:clients,id',
             'client_name' => 'nullable|string',
-            'quantity' => 'required|numeric|min:0.01',
+            'input_unit' => 'nullable|in:kg,carton',
+            'input_quantity' => 'nullable|numeric|min:0.01',
+            'quantity' => 'required|numeric|min:0.01', // compat (kg)
             'exit_date' => 'required|date',
             'reason' => 'required|in:vente,perte,peremption,autre',
             'unit_price' => 'required|numeric|min:0',
@@ -243,17 +275,32 @@ class StockExitController extends Controller
             $clientId = $validated['client_id'];
         }
 
+        $product = Product::find($validated['product_id']);
+        $inputUnit = $validated['input_unit'] ?? 'kg';
+        $inputQty = isset($validated['input_quantity']) ? (float) $validated['input_quantity'] : (float) $validated['quantity'];
+
+        try {
+            $converted = StockUnit::toKg($product, $inputUnit, $inputQty);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        $quantityKg = $converted['kg'];
+
         // Add user_id (caissier) to the validated data
         $validated['user_id'] = $user->id;
         $validated['client_id'] = $clientId;
+        $validated['input_unit'] = $inputUnit;
+        $validated['input_quantity'] = $inputQty;
+        $validated['conversion_rate'] = $converted['conversion_rate'];
+        $validated['quantity'] = $quantityKg; // stock truth (kg)
 
         // Check if enough stock available
-        $product = Product::find($validated['product_id']);
-        if ($product->current_stock < $validated['quantity']) {
+        if ($product->current_stock < $quantityKg) {
             return response()->json([
                 'message' => 'Stock insuffisant disponible',
                 'available_stock' => $product->current_stock,
-                'requested_quantity' => $validated['quantity']
+                'requested_quantity' => $quantityKg
             ], 422);
         }
 
@@ -262,12 +309,12 @@ class StockExitController extends Controller
 
         $stockExit = StockExit::create($validated);
 
-        // Reduce product current stock
-        $product->current_stock -= $validated['quantity'];
+        // Reduce product current stock (kg)
+        $product->current_stock -= $quantityKg;
         $product->save();
 
         // Also create Sale and SaleItem for tracking
-        $totalCost = $validated['quantity'] * $validated['unit_price'];
+        $totalCost = $inputQty * (float) $validated['unit_price'];
         
         $sale = Sale::create([
             'sale_date' => $validated['exit_date'],
@@ -281,7 +328,10 @@ class StockExitController extends Controller
         SaleItem::create([
             'sale_id' => $sale->id,
             'product_id' => $validated['product_id'],
-            'quantity' => $validated['quantity'],
+            'input_unit' => $inputUnit,
+            'input_quantity' => $inputQty,
+            'conversion_rate' => $converted['conversion_rate'],
+            'quantity' => $quantityKg,
             'unit_price' => $validated['unit_price'],
             'subtotal' => $totalCost,
         ]);
@@ -296,6 +346,17 @@ class StockExitController extends Controller
         }
 
         $stockExit->load(['product', 'client', 'user']);
+
+        NotifyDG::send('Sortie de stock / Vente', [
+            "Reçu : {$receiptNumber}",
+            "Produit : {$stockExit->product?->name}",
+            "Client : " . ($stockExit->client?->name ?? '-'),
+            "Quantité : {$stockExit->quantity}",
+            "Prix unitaire : " . number_format((float) $stockExit->unit_price, 0, ',', ' ') . " FCFA",
+            "Date : {$stockExit->exit_date}",
+            "Payée : " . ($stockExit->is_paid ? 'Oui' : 'Non'),
+            "Caissier : {$user->name} ({$user->role})",
+        ]);
 
         return response()->json([
             'message' => 'Stock exit created successfully',

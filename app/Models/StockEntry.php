@@ -18,6 +18,9 @@ class StockEntry extends Model
     protected $fillable = [
         'product_id',
         'supplier_id',
+        'input_unit',
+        'input_quantity',
+        'conversion_rate',
         'quantity',
         'expiration_date',
         'entry_date',
@@ -33,6 +36,8 @@ class StockEntry extends Model
      * @var array<string, string>
      */
     protected $casts = [
+        'input_quantity' => 'decimal:2',
+        'conversion_rate' => 'decimal:4',
         'quantity' => 'decimal:2',
         'expiration_date' => 'date',
         'entry_date' => 'date',
