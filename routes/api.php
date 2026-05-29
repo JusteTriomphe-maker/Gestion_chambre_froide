@@ -19,7 +19,7 @@ use App\Http\Controllers\Api\SaleController;
 */
 
 // Protected Routes
-Route::middleware(['api', 'auth:sanctum'])->group(function () {
+Route::middleware(['api', 'auth'])->group(function () {
     
     // Permissions API - Accessible à tous les utilisateurs connectés
     Route::prefix('permissions')->group(function () {
