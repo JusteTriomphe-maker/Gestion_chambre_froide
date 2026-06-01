@@ -14,7 +14,7 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --no-script
 
 # 3) Runtime image
 FROM php:8.2-fpm-alpine
-RUN apk add --no-cache nginx icu-dev libzip-dev oniguruma-dev postgresql-dev zlib-dev bash shadow git \
+RUN apk add --no-cache nginx icu-dev libzip-dev oniguruma-dev postgresql-dev postgresql-client zlib-dev bash shadow git netcat-openbsd \
     && docker-php-ext-install pdo_pgsql intl bcmath pcntl zip opcache
 
 WORKDIR /var/www/html
@@ -27,5 +27,9 @@ RUN mkdir -p /run/nginx /var/www/html/storage /var/www/html/bootstrap/cache \
     && chown -R www-data:www-data /var/www/html
 COPY nginx.conf /etc/nginx/nginx.conf
 
+# Add entrypoint
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 EXPOSE 80
-CMD ["sh", "-c", "php artisan migrate --force && php-fpm -D && nginx -g 'daemon off;'" ]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
