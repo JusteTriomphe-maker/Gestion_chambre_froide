@@ -17,6 +17,16 @@ FROM php:8.2-fpm-alpine
 RUN apk add --no-cache nginx icu-dev libzip-dev oniguruma-dev postgresql-dev postgresql-client zlib-dev bash shadow git netcat-openbsd \
     && docker-php-ext-install pdo_pgsql intl bcmath pcntl zip opcache
 
+# Configure PHP-FPM to listen on TCP port 9000
+RUN echo "[www]" > /usr/local/etc/php-fpm.d/zz-docker.conf && \
+    echo "listen = 127.0.0.1:9000" >> /usr/local/etc/php-fpm.d/zz-docker.conf && \
+    echo "listen.backlog = 4096" >> /usr/local/etc/php-fpm.d/zz-docker.conf && \
+    echo "pm = dynamic" >> /usr/local/etc/php-fpm.d/zz-docker.conf && \
+    echo "pm.max_children = 10" >> /usr/local/etc/php-fpm.d/zz-docker.conf && \
+    echo "pm.start_servers = 2" >> /usr/local/etc/php-fpm.d/zz-docker.conf && \
+    echo "pm.min_spare_servers = 1" >> /usr/local/etc/php-fpm.d/zz-docker.conf && \
+    echo "pm.max_spare_servers = 5" >> /usr/local/etc/php-fpm.d/zz-docker.conf
+
 WORKDIR /var/www/html
 COPY --from=vendor /app/vendor ./vendor
 COPY --from=frontend /app/public ./public

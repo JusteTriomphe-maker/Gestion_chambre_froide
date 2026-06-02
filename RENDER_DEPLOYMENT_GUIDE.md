@@ -38,33 +38,141 @@ git log --oneline | head -1
 3. Configuration :
    - **Name**: `chambre-froide-db`
    - **Database Name**: `chambre_froide`
-   - **User**: `postgres`
+   - **User**: `chambre_froide_user` (ou un autre nom personnalisé, `postgres` n'est pas accepté)
    - **Region**: Sélectionner la plus proche (ex: `Frankfurt`)
 4. **Create Database**
 5. Noter les credentials (affichés après création) :
    - `DB_HOST` : (example: `dpg-xyz.render.internal`)
    - `DB_PORT` : `5432`
    - `DB_DATABASE` : `chambre_froide`
-   - `DB_USERNAME` : `postgres`
+   - `DB_USERNAME` : `chambre_froide_user`
    - `DB_PASSWORD` : (généré, notez-le!)
 
 #### B) Web Service
+Pour Laravel sur Render, le plus simple est de déployer un seul service PHP si Render le propose. Si ton interface force `Node`, choisis plutôt `Docker` et ajoute un `Dockerfile`.
+
+##### Option 1 — Service PHP (recommandé si disponible)
 1. **New** > **Web Service**
 2. Configuration :
-   - **Repository** : Sélectionner le dépôt GitHub (ex: `yourusername/chambre-froide`)
+   - **Repository** : `JusteTriomphe-maker/Gestion_chambre_froide`
    - **Branch** : `main`
-   - **Name** : `chambre-froide-app`
+   - **Name** : `chambre-froide-backend`
    - **Root Directory** : (laisser vide)
-   - **Environment** : `Node`
+   - **Environment** : `PHP`
    - **Build Command** :
      ```bash
-     composer install --no-dev --optimize-autoloader && npm ci && npm run build
+     composer install --no-dev --optimize-autoloader
+     php artisan config:cache || true
+     php artisan route:cache || true
      ```
    - **Start Command** :
      ```bash
-     php artisan migrate --force && php artisan serve --host 0.0.0.0 --port $PORT
+     php artisan migrate --force && php -S 0.0.0.0:$PORT -t public
      ```
-   - **Plan** : Free (ou Starter si vous avez besoin de meilleure performance)
+   - **Plan** : Free ou Starter
+
+> Astuce : si la console Render détecte `Node`, ignore cette détection et change manuellement le runtime en `PHP`.
+
+##### Option 2 — Service Docker (si PHP n’apparaît pas dans la liste)
+1. **New** > **Web Service**
+2. Configuration :
+   - **Repository** : `JusteTriomphe-maker/Gestion_chambre_froide`
+   - **Branch** : `main`
+   - **Name** : `chambre-froide-backend`
+   - **Root Directory** : (laisser vide)
+   - **Environment** : `Docker`
+   - **Dockerfile Path** : `./Dockerfile`
+   - **Build Command** : laisser vide
+   - **Start Command** : laisser vide
+   - **Plan** : Free ou Starter
+
+3. Ajoute un `Dockerfile` à la racine du dépôt avec ce contenu :
+
+```dockerfile
+# 1) Build front-end assets
+FROM node:18-alpine AS frontend
+WORKDIR /app
+COPY package*.json .
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# 2) Install PHP dependencies
+FROM composer:2 AS vendor
+WORKDIR /app
+COPY composer.json composer.lock .
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts --no-progress
+
+# 3) Runtime image
+FROM php:8.2-fpm-alpine
+RUN apk add --no-cache nginx icu-dev libzip-dev oniguruma-dev postgresql-dev zlib-dev bash shadow git \
+    && docker-php-ext-install pdo_pgsql intl bcmath pcntl zip opcache
+
+WORKDIR /var/www/html
+COPY --from=vendor /app/vendor ./vendor
+COPY --from=frontend /app/public ./public
+COPY --from=frontend /app .
+
+# NGINX setup
+RUN mkdir -p /run/nginx /var/www/html/storage /var/www/html/bootstrap/cache \
+    && chown -R www-data:www-data /var/www/html
+COPY nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 80
+CMD ["sh", "-c", "php artisan migrate --force && php-fpm -D && nginx -g 'daemon off;'"]
+```
+
+4. Crée un fichier `nginx.conf` à la racine du dépôt :
+
+```nginx
+worker_processes 1;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+events { worker_connections 1024; }
+
+http {
+    include mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    keepalive_timeout 65;
+
+    server {
+        listen 80;
+        server_name localhost;
+        root /var/www/html/public;
+        index index.php index.html;
+
+        location / {
+            try_files $uri $uri/ /index.php?$query_string;
+        }
+
+        location ~ \.php$ {
+            fastcgi_pass unix:/var/run/php-fpm.sock;
+            fastcgi_index index.php;
+            include fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_param PATH_INFO $fastcgi_path_info;
+        }
+
+        location ~ /\.ht {
+            deny all;
+        }
+    }
+}
+```
+
+5. Ajoute aussi un fichier `.dockerignore` :
+
+```
+node_modules
+vendor
+storage
+.env
+.git
+```
+
+> Le Dockerfile ci-dessus compile Vite + React, installe Composer, puis lance PHP+NGINX.
 
 ### 3️⃣ Configurer les variables d'environnement
 
@@ -79,13 +187,14 @@ APP_KEY=base64:hEktQiQBsYSYbmV9HtOUlx2RHuqK7+qPkZ5BVIflU2s=
 APP_URL=https://chambre-froide-app.onrender.com
 APP_TIMEZONE=UTC
 
-# Database (remplacer par vos credentials PostgreSQL)
+# Database (Render PostgreSQL)
+DATABASE_URL=postgres://<db_user>:<db_password>@<db_host>:5432/<db_name>
 DB_CONNECTION=pgsql
-DB_HOST=dpg-xyz.render.internal
+DB_HOST=<db_host>
 DB_PORT=5432
-DB_DATABASE=chambre_froide
-DB_USERNAME=postgres
-DB_PASSWORD=your-password-here
+DB_DATABASE=<db_name>
+DB_USERNAME=<db_user>
+DB_PASSWORD=<db_password>
 
 # Sanctum/Authentication
 SANCTUM_STATEFUL_DOMAINS=chambre-froide-app.onrender.com
@@ -105,6 +214,11 @@ MAIL_USERNAME=justenicous239@gmail.com
 MAIL_PASSWORD=xqptqfqumgphglfs
 MAIL_ENCRYPTION=tls
 ```
+
+**Important** :
+- `APP_KEY` doit provenir de `php artisan key:generate --show` si tu le génères après coup.
+- `DATABASE_URL` est l’URL interne de la base PostgreSQL fournie par Render.
+- `DB_USERNAME` ne doit pas être `postgres` si Render le refuse.
 
 **⚠️ Important** : Le `APP_URL` doit être mis à jour avec l'URL exacte que Render vous donnera après création du service.
 

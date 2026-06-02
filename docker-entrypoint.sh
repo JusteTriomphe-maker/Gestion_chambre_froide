@@ -20,6 +20,31 @@ php artisan migrate --force || true
 php artisan config:cache || true
 php artisan route:cache || true
 
+echo "[entrypoint] Configuring Nginx with PORT=${PORT:-80}"
+sed -i "s/listen \${PORT:-80}/listen ${PORT:-80}/g" /etc/nginx/nginx.conf
+
 echo "[entrypoint] Starting services"
-php-fpm -D
-nginx -g 'daemon off;'
+# Start php-fpm in foreground to capture errors in container logs, background it so nginx can run
+php-fpm -F &
+PHP_FPM_PID=$!
+
+echo "[entrypoint] php-fpm started with pid=$PHP_FPM_PID"
+
+echo "[entrypoint] Waiting for php-fpm to listen on 127.0.0.1:9000"
+RETRY=0
+MAX=15
+while ! nc -z 127.0.0.1 9000 >/dev/null 2>&1; do
+  if ! kill -0 "$PHP_FPM_PID" >/dev/null 2>&1; then
+    echo "[entrypoint] php-fpm process died"
+    exit 1
+  fi
+  RETRY=$((RETRY+1))
+  if [ "$RETRY" -ge "$MAX" ]; then
+    echo "[entrypoint] php-fpm did not start on 127.0.0.1:9000 after $MAX attempts"
+    exit 1
+  fi
+  sleep 1
+ done
+
+echo "[entrypoint] php-fpm is ready"
+exec nginx -g 'daemon off;'
