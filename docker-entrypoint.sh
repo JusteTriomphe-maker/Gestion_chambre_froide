@@ -26,6 +26,7 @@ chown -R www-data:www-data storage bootstrap/cache || true
 chmod -R 775 storage bootstrap/cache || true
 
 php artisan migrate --force || true
+php artisan db:seed --force || true
 php artisan config:clear || true
 php artisan route:clear || true
 php artisan view:clear || true
