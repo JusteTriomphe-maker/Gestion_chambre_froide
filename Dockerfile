@@ -30,17 +30,29 @@ RUN echo "[www]" > /usr/local/etc/php-fpm.d/zz-docker.conf && \
 
 WORKDIR /var/www/html
 
-# Copier d'abord le vendor (couche dédiée pour le cache Docker)
-COPY --from=vendor /app/vendor ./vendor
-# Copier les assets frontend buildés (inclut public/build/)
+# ── Copie explicite de chaque répertoire (évite de copier node_modules) ────────
+# Fichiers PHP source
+COPY --from=frontend /app/app ./app
+COPY --from=frontend /app/bootstrap ./bootstrap
+COPY --from=frontend /app/config ./config
+COPY --from=frontend /app/database ./database
+COPY --from=frontend /app/resources ./resources
+COPY --from=frontend /app/routes ./routes
+COPY --from=frontend /app/storage ./storage
+# Fichiers racine
+COPY --from=frontend /app/artisan ./artisan
+COPY --from=frontend /app/composer.json ./composer.json
+# Assets publics buildés par Vite (public/build/ généré lors du npm run build)
 COPY --from=frontend /app/public ./public
-# Copier tout le projet (vendor et public seront écrasés si besoin, mais les layers Docker mettent en cache)
-COPY --from=frontend /app .
-# Remettre vendor depuis la couche composer (priorité)
+# Vendor PHP depuis le stage composer (priorité absolue)
 COPY --from=vendor /app/vendor ./vendor
 
+# ── Garantie absolue : public/hot ne doit JAMAIS exister en production ─────────
+RUN rm -f /var/www/html/public/hot
+
 # NGINX & permissions setup
-RUN mkdir -p /run/nginx /var/www/html/storage/framework/views \
+RUN mkdir -p /run/nginx \
+               /var/www/html/storage/framework/views \
                /var/www/html/storage/framework/sessions \
                /var/www/html/storage/framework/cache \
                /var/www/html/bootstrap/cache \
