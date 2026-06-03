@@ -16,12 +16,25 @@ done
 echo "[entrypoint] Database is ready"
 
 echo "[entrypoint] Running migrations & caches"
+# Ensure framework storage directories exist before caching configuration.
+mkdir -p storage/framework/views storage/framework/sessions storage/framework/cache bootstrap/cache || true
+chown -R www-data:www-data storage bootstrap/cache || true
+chmod -R 775 storage bootstrap/cache || true
+
 php artisan migrate --force || true
+php artisan config:clear || true
+php artisan route:clear || true
+php artisan view:clear || true
 php artisan config:cache || true
 php artisan route:cache || true
 
 echo "[entrypoint] Configuring Nginx with PORT=${PORT:-80}"
 sed -i "s/listen \${PORT:-80}/listen ${PORT:-80}/g" /etc/nginx/nginx.conf
+
+# Ensure framework subfolders exist and are writable
+mkdir -p storage/framework/views storage/framework/sessions storage/framework/cache bootstrap/cache || true
+chown -R www-data:www-data storage bootstrap/cache || true
+chmod -R 775 storage bootstrap/cache || true
 
 echo "[entrypoint] Starting services"
 # Start php-fpm in foreground to capture errors in container logs, background it so nginx can run
