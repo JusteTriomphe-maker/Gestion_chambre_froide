@@ -1,15 +1,16 @@
 # 1) Build front-end assets
 FROM node:18-alpine AS frontend
 WORKDIR /app
-COPY package*.json .
+COPY package*.json ./
 RUN npm ci
 COPY . .
-RUN npm run build
+# Build en mode production et supprimer public/hot s'il existe
+RUN NODE_ENV=production npm run build && rm -f public/hot
 
 # 2) Install PHP dependencies
 FROM composer:2 AS vendor
 WORKDIR /app
-COPY composer.json composer.lock .
+COPY composer.json composer.lock ./
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts --no-progress
 
 # 3) Runtime image
@@ -28,18 +29,30 @@ RUN echo "[www]" > /usr/local/etc/php-fpm.d/zz-docker.conf && \
     echo "pm.max_spare_servers = 5" >> /usr/local/etc/php-fpm.d/zz-docker.conf
 
 WORKDIR /var/www/html
-COPY --from=vendor /app/vendor ./vendor
-COPY --from=frontend /app/public ./public
-COPY --from=frontend /app .
 
-# NGINX setup
-RUN mkdir -p /run/nginx /var/www/html/storage /var/www/html/bootstrap/cache \
-    && chown -R www-data:www-data /var/www/html
+# Copier d'abord le vendor (couche dédiée pour le cache Docker)
+COPY --from=vendor /app/vendor ./vendor
+# Copier les assets frontend buildés (inclut public/build/)
+COPY --from=frontend /app/public ./public
+# Copier tout le projet (vendor et public seront écrasés si besoin, mais les layers Docker mettent en cache)
+COPY --from=frontend /app .
+# Remettre vendor depuis la couche composer (priorité)
+COPY --from=vendor /app/vendor ./vendor
+
+# NGINX & permissions setup
+RUN mkdir -p /run/nginx /var/www/html/storage/framework/views \
+               /var/www/html/storage/framework/sessions \
+               /var/www/html/storage/framework/cache \
+               /var/www/html/bootstrap/cache \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+
 COPY nginx.conf /etc/nginx/nginx.conf
 
 # Add entrypoint
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-EXPOSE 80
+# Render assigne le port 10000 par défaut
+EXPOSE 10000
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

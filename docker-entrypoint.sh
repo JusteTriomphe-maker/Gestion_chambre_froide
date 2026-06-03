@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
 
+# ── Supprimer le fichier public/hot de Vite (dev server) s'il existe ──────────
+# Ce fichier force Laravel à pointer vers le dev server Vite au lieu du build.
+rm -f /var/www/html/public/hot
+
 echo "[entrypoint] Waiting for database..."
 RETRY=0
 MAX=30
@@ -28,8 +32,10 @@ php artisan view:clear || true
 php artisan config:cache || true
 php artisan route:cache || true
 
-echo "[entrypoint] Configuring Nginx with PORT=${PORT:-80}"
-sed -i "s/listen \${PORT:-80}/listen ${PORT:-80}/g" /etc/nginx/nginx.conf
+# ── Configurer Nginx avec le port assigné par Render ─────────────────────────
+NGINX_LISTEN_PORT="${PORT:-10000}"
+echo "[entrypoint] Configuring Nginx with PORT=${NGINX_LISTEN_PORT}"
+sed -i "s/NGINX_PORT/${NGINX_LISTEN_PORT}/g" /etc/nginx/nginx.conf
 
 # Ensure framework subfolders exist and are writable
 mkdir -p storage/framework/views storage/framework/sessions storage/framework/cache bootstrap/cache || true
@@ -57,7 +63,7 @@ while ! nc -z 127.0.0.1 9000 >/dev/null 2>&1; do
     exit 1
   fi
   sleep 1
- done
+done
 
 echo "[entrypoint] php-fpm is ready"
 exec nginx -g 'daemon off;'
