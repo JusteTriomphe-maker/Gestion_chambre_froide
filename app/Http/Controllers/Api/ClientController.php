@@ -203,46 +203,80 @@ class ClientController extends Controller
             ], 422);
         }
 
-        $type = $paymentAmount >= $currentDebt ? Payment::TYPE_FULL : Payment::TYPE_PARTIAL;
+        \Illuminate\Support\Facades\DB::beginTransaction();
+        try {
+            $type = $paymentAmount >= $currentDebt ? Payment::TYPE_FULL : Payment::TYPE_PARTIAL;
 
-        // Enregistrer le paiement dans la table dédiée
-        $payment = Payment::create([
-            'client_id' => $client->id,
-            'amount' => $paymentAmount,
-            'type' => $type,
-        ]);
+            // Enregistrer le paiement dans la table dédiée
+            $payment = Payment::create([
+                'client_id' => $client->id,
+                'amount'    => $paymentAmount,
+                'type'      => $type,
+            ]);
 
-        // Mettre à jour la dette agrégée du client
-        $client->total_debt = max(0, $currentDebt - $paymentAmount);
-        $client->save();
+            // Mettre à jour la dette agrégée du client
+            $client->total_debt = max(0, $currentDebt - $paymentAmount);
+            $client->save();
 
-        $unpaidExits = $client->stockExits()->where('is_paid', false)->get();
-        $remainingAmount = $validated['amount'];
+            // ---------------------------------------------------------------
+            // Marquer les ventes impayées comme payées (chiffre d'affaires)
+            // On solde les ventes les plus anciennes en premier
+            // ---------------------------------------------------------------
+            $unpaidSales = \App\Models\Sale::where('client_id', $client->id)
+                ->where('is_paid', false)
+                ->with('items')
+                ->orderBy('sale_date')
+                ->orderBy('id')
+                ->get();
 
-        foreach ($unpaidExits as $exit) {
-            $exitTotal = $exit->quantity * $exit->unit_price;
-            if ($remainingAmount >= $exitTotal) {
-                $exit->is_paid = true;
-                $exit->save();
-                $remainingAmount -= $exitTotal;
+            $remainingForSales = $paymentAmount;
+            foreach ($unpaidSales as $sale) {
+                $saleTotal = $sale->items->sum(fn($item) => (float) $item->subtotal);
+                if ($saleTotal <= 0) continue;
+
+                if ($remainingForSales >= $saleTotal) {
+                    $sale->is_paid  = true;
+                    $sale->paid_at  = now();
+                    $sale->save();
+                    $remainingForSales -= $saleTotal;
+                }
+                if ($remainingForSales <= 0) break;
             }
-            if ($remainingAmount <= 0) break;
+
+            // Marquer aussi les sorties de stock impayées
+            $unpaidExits = $client->stockExits()->where('is_paid', false)->get();
+            $remainingForExits = $paymentAmount;
+            foreach ($unpaidExits as $exit) {
+                $exitTotal = (float) $exit->quantity * (float) $exit->unit_price;
+                if ($remainingForExits >= $exitTotal) {
+                    $exit->is_paid = true;
+                    $exit->save();
+                    $remainingForExits -= $exitTotal;
+                }
+                if ($remainingForExits <= 0) break;
+            }
+
+            \Illuminate\Support\Facades\DB::commit();
+
+            NotifyDG::send('Paiement de dette client', [
+                "Client : {$client->name}",
+                "Type : " . ($type === Payment::TYPE_FULL ? 'Paiement total' : 'Paiement partiel'),
+                "Montant payé : " . number_format($paymentAmount, 0, ',', ' ') . " FCFA",
+                "Dette avant : " . number_format($currentDebt, 0, ',', ' ') . " FCFA",
+                "Dette restante : " . number_format((float) $client->total_debt, 0, ',', ' ') . " FCFA",
+                "Effectué par : {$user->name} ({$user->role})",
+            ]);
+
+            return response()->json([
+                'message'      => 'Paiement enregistré avec succès',
+                'payment'      => $payment,
+                'payment_type' => $type,
+                'remaining_debt' => $client->total_debt,
+            ]);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\DB::rollBack();
+            return response()->json(['message' => 'Erreur: ' . $e->getMessage()], 500);
         }
-
-        NotifyDG::send('Paiement de dette client', [
-            "Client : {$client->name}",
-            "Type : " . ($type === Payment::TYPE_FULL ? 'Paiement total' : 'Paiement partiel'),
-            "Montant payé : " . number_format((float) $paymentAmount, 0, ',', ' ') . " FCFA",
-            "Dette avant : " . number_format((float) $currentDebt, 0, ',', ' ') . " FCFA",
-            "Dette restante : " . number_format((float) $client->total_debt, 0, ',', ' ') . " FCFA",
-            "Effectué par : {$user->name} ({$user->role})",
-        ]);
-
-        return response()->json([
-            'message' => 'Payment recorded successfully',
-            'payment' => $payment,
-            'payment_type' => $type,
-            'remaining_debt' => $client->total_debt,
-        ]);
     }
 }
