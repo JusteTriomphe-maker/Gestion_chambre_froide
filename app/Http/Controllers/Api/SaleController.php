@@ -18,6 +18,30 @@ use Illuminate\Support\Facades\DB;
 class SaleController extends Controller
 {
     /**
+     * Get products available for sale (accessible to cashiers).
+     * Returns only what is needed to process a sale: name, prices, stock.
+     */
+    public function availableProducts(Request $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (!RoleMiddleware::can($user, 'sales', 'view')) {
+            return response()->json(['message' => 'Accès refusé'], 403);
+        }
+
+        $products = Product::select([
+                'id', 'name', 'category', 'barcode',
+                'price_selling', 'price_per_carton',
+                'stock_mode', 'kg_per_carton', 'unit', 'current_stock',
+            ])
+            ->where('current_stock', '>', 0)
+            ->orderBy('name')
+            ->get();
+
+        return response()->json(['data' => $products]);
+    }
+
+    /**
      * Get all sales with daily totals
      * Only includes PAID sales for revenue calculation
      */

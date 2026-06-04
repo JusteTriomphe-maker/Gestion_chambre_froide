@@ -159,6 +159,9 @@ Route::middleware(['api', 'auth'])->group(function () {
     
     // Sales API - Gestion des ventes et recus - Accès: DG, Caissier
     Route::prefix('sales')->group(function () {
+        // Route spéciale: produits disponibles pour la vente - Accès: DG, Gérant, Caissier (tous ceux qui font des ventes)
+        Route::get('/products', [SaleController::class, 'availableProducts'])
+            ->middleware(\App\Http\Middleware\RoleAccessMiddleware::class.':sales');
         Route::get('/', [SaleController::class, 'index'])
             ->middleware(\App\Http\Middleware\RoleAccessMiddleware::class.':sales');
         Route::post('/', [SaleController::class, 'store'])
