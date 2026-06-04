@@ -81,8 +81,7 @@ export default function Dashboard() {
             return '0 FCFA';
         }
         return new Intl.NumberFormat('fr-FR', {
-            notation: 'compact',
-            maximumFractionDigits: 1,
+            maximumFractionDigits: 0,
         }).format(num) + ' FCFA';
     };
 
