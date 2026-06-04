@@ -1,7 +1,10 @@
 # ignore local dependencies and generated files
 node_modules
 vendor
-storage
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+storage/logs/*
 .env
 .git
 
