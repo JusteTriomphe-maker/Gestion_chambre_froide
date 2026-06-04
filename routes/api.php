@@ -18,6 +18,9 @@ use App\Http\Controllers\Api\SaleController;
 |--------------------------------------------------------------------------
 */
 
+// Utility route for fixing data anomalies
+Route::get('/debug/sync-debts', [DebtController::class, 'syncSales']);
+
 // Protected Routes
 Route::middleware(['api', 'auth'])->group(function () {
     

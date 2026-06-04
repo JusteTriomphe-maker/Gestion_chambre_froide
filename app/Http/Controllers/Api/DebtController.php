@@ -14,6 +14,48 @@ use App\Support\NotifyDG;
 class DebtController extends Controller
 {
     /**
+     * Script de nettoyage : synchronise le statut des ventes (is_paid) 
+     * avec la dette (total_debt) du client.
+     */
+    public function syncSales(Request $request): JsonResponse
+    {
+        if ($request->query('secret') !== 'chambrefroide2026') {
+            return response()->json(['message' => 'Non autorisé'], 401);
+        }
+
+        $clients = \App\Models\Client::all();
+        $fixedSales = 0;
+
+        foreach ($clients as $client) {
+            // Si le client n'a plus de dette, toutes ses ventes doivent être "Payées"
+            if ((float) $client->total_debt <= 0) {
+                $sales = \App\Models\Sale::where('client_id', $client->id)
+                    ->where('is_paid', false)
+                    ->get();
+                
+                foreach ($sales as $sale) {
+                    $sale->is_paid = true;
+                    $sale->paid_at = $sale->paid_at ?? now();
+                    $sale->save();
+                    $fixedSales++;
+                }
+
+                // Même chose pour les sorties de stock
+                $exits = $client->stockExits()->where('is_paid', false)->get();
+                foreach ($exits as $exit) {
+                    $exit->is_paid = true;
+                    $exit->save();
+                }
+            }
+        }
+
+        return response()->json([
+            'message' => 'Nettoyage terminé avec succès !',
+            'ventes_corrigees' => $fixedSales
+        ]);
+    }
+
+    /**
      * Display a listing of the debts.
      */
     public function index(Request $request): JsonResponse
