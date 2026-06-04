@@ -75,4 +75,32 @@ Route::middleware('auth')->group(function () {
     })->name('revenue.alias')->middleware(\App\Http\Middleware\RoleAccessMiddleware::class.':revenue');
 });
 
+Route::get('/debug-db', function () {
+    try {
+        $dbName = Illuminate\Support\Facades\DB::connection()->getDatabaseName();
+        $tables = Illuminate\Support\Facades\DB::select("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'");
+        $tableNames = array_map(function($t) { return $t->table_name; }, $tables);
+        
+        $usersExist = in_array('users', $tableNames);
+        $users = [];
+        if ($usersExist) {
+            $users = Illuminate\Support\Facades\DB::table('users')->select('email', 'role', 'is_active', 'email_verified_at')->get();
+        }
+        
+        return response()->json([
+            'status' => 'success',
+            'database' => $dbName,
+            'tables' => $tableNames,
+            'users_exist' => $usersExist,
+            'users' => $users,
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ], 500);
+    }
+});
+
 require __DIR__.'/auth.php';
